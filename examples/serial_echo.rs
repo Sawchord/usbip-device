@@ -18,19 +18,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
    loop {
       std::thread::sleep(std::time::Duration::from_millis(5));
-      log::trace!("polling usb bus");
       usb_bus.poll(&mut [&mut usb_serial]);
 
       let mut buf = [0; 64];
       if let Ok(count) = usb_serial.read(&mut buf) {
-         log::info!("read {} bytes", count);
-
          let text = String::from_utf8_lossy(&buf);
-         log::info!("received: {}", text);
+         log::info!("read {} bytes: {}", count, text);
 
          // TODO: To uppercase
-         // TODO: Send back
-         todo!()
+
+         // Send back, poll usb until we are ready
+         loop {
+            usb_bus.poll(&mut [&mut usb_serial]);
+            if let Ok(count) = usb_serial.write(&buf) {
+               log::info!("sent back {} bytes", count);
+               break;
+            }
+         }
       }
    }
 }

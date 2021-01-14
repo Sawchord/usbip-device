@@ -9,7 +9,7 @@ usb-device = { version = "0.2.7", default-features = false }
 
 log = { version = "0.4.13", default-features = false }
 
-serde = { version = "1.0.119", default-features = false }
+serde = { version = "1.0.119", default-features = false, features = ["derive", "alloc"] }
 ssmarshal = { version = "1.0.0", default-features = false }
 heapless = { version = "0.5.6", default-features = false }
 
