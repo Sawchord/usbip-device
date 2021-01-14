@@ -1,0 +1,18 @@
+[package]
+name = "usbip-device"
+version = "0.0.0"
+authors = ["Leon Tan <leon.arian.tan@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+usb-device = { version = "0.2.7", default-features = false }
+
+log = { version = "0.4.13", default-features = false }
+
+serde = { version = "1.0.119", default-features = false }
+ssmarshal = { version = "1.0.0", default-features = false }
+heapless = { version = "0.5.6", default-features = false }
+
+[dev-dependencies]
+pretty_env_logger = { version = "0.4.0", default-features = false }
+usbd-serial = { version = "0.1.1", default-features = false }
