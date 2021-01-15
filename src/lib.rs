@@ -1,13 +1,11 @@
 #![allow(dead_code)]
 
 pub(crate) mod cmd;
+pub(crate) mod handler;
 pub(crate) mod op;
-pub(crate) mod usbip;
 
-use std::{
-    net::{IpAddr, UdpSocket},
-    sync::{Arc, Mutex, MutexGuard},
-};
+use crate::handler::SocketHandler;
+use std::sync::{Arc, Mutex, MutexGuard};
 use usb_device::{
     Result as UsbResult, UsbDirection, UsbError,
     {
@@ -31,7 +29,6 @@ pub struct Endpoint {
 #[derive(Debug)]
 pub struct UsbIpBusInner {
     endpoint: [Option<Endpoint>; NUM_ENDPOINTS],
-    socket: UdpSocket,
     device_address: u8,
     suspended: bool,
 }
@@ -71,13 +68,15 @@ pub struct UsbIpBus(Arc<Mutex<UsbIpBusInner>>);
 
 impl UsbIpBus {
     /// Create a new [`UsbIpBus`].
-    pub fn new(addr: IpAddr, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self(Arc::new(Mutex::new(UsbIpBusInner {
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let new_bus = Self(Arc::new(Mutex::new(UsbIpBusInner {
             endpoint: [None; NUM_ENDPOINTS],
-            socket: UdpSocket::bind((addr, port))?,
             device_address: 0,
             suspended: false,
-        }))))
+        })));
+
+        SocketHandler::run(new_bus.clone());
+        Ok(new_bus)
     }
 
     fn lock(&self) -> MutexGuard<UsbIpBusInner> {

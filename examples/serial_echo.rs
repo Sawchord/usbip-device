@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
    log::info!("initializing allocator");
 
-   let bus_allocator = UsbBusAllocator::new(UsbIpBus::new("127.0.0.1".parse()?, 3240)?);
+   let bus_allocator = UsbBusAllocator::new(UsbIpBus::new()?);
    let mut usb_serial = SerialPort::new(&bus_allocator);
    let mut usb_bus = UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x27dd))
       .manufacturer("Fake company")
