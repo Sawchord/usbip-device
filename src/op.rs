@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 
 #[repr(C)]
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct OpHeader {
    pub version: u16,
    pub command: u16,
@@ -147,7 +146,7 @@ impl OpResponse {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct OpDeviceDescriptor {
    pub busnum: u32,
    pub devnum: u32,
@@ -189,7 +188,7 @@ impl OpDeviceDescriptor {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct OpInterfaceDescriptor {
    pub interface_class: u8,
    pub interface_subclass: u8,

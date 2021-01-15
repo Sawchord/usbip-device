@@ -48,12 +48,14 @@ impl SocketHandler {
          // NOTE: This call blocks. We must not hold the lock while calling it
          let bytes_read = stream.read(&mut buf).unwrap();
          log::debug!("read {} bytes from socket", bytes_read);
+
+         let mut inner = self.bus.lock();
          if bytes_read == 0 {
-            log::info!("connection closed");
+            inner.reset = true;
+            log::info!("connection closed, device entering reset state");
             break;
          }
 
-         let inner = self.bus.lock();
          let response = match inner.reset {
             true => match OpRequest::from_slice(&buf[..bytes_read]) {
                Some(op) => handle_op(inner, op),
@@ -134,6 +136,7 @@ fn handle_op(mut inner: MutexGuard<UsbIpBusInner>, op: OpRequest) -> Vec<u8> {
          };
 
          // Set the inner value to not reset, because we have connected the device
+         log::info!("device is leaving ready state");
          inner.reset = false;
 
          list_response.to_vec().unwrap()
