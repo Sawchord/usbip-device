@@ -11,7 +11,6 @@ log = { version = "0.4.13", default-features = false }
 
 serde = { version = "1.0.119", default-features = false, features = ["derive", "alloc"] }
 ssmarshal = { version = "1.0.0", default-features = false }
-heapless = { version = "0.5.6", default-features = false }
 
 [dev-dependencies]
 pretty_env_logger = { version = "0.4.0", default-features = false }

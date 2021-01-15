@@ -1,13 +1,4 @@
 use serde::{Deserialize, Serialize};
-
-#[repr(C)]
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct UsbIpHeader {
-   version: u16,
-   command: u16,
-   status: u32,
-}
-
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct UsbIpCmdSubmit {
@@ -59,7 +50,7 @@ struct UsbIpUnlinkRequest {
 #[repr(C)]
 #[derive(Debug, Clone)]
 struct OprepDevList {
-   header: UsbIpHeader,
+   //header: UsbIpHeader,
    exported_device: u32,
    usb_path: String,
    bus_id: String,

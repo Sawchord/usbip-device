@@ -16,6 +16,9 @@ cargo run --example serial_echo
 and then start the USBIP client.
 
 ```
+// Start the vhci driver
+sudo modprobe vhci-hcd
+
 // List available devices
 usbip list -r "ip-address" 
 
