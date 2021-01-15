@@ -17,29 +17,46 @@ use usb_device::{
 const NUM_ENDPOINTS: usize = 16;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Endpoint {
-    direction: UsbDirection,
+pub struct EndpointConf {
     ty: EndpointType,
     max_packet_size: u16,
     interval: u8,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Endpoint {
+    in_ep: Option<EndpointConf>,
+    out_ep: Option<EndpointConf>,
     stalled: bool,
     // TODO: Input and Output buffer
 }
 
 #[derive(Debug)]
 pub struct UsbIpBusInner {
-    endpoint: [Option<Endpoint>; NUM_ENDPOINTS],
+    endpoint: [Endpoint; NUM_ENDPOINTS],
     device_address: u8,
+    reset: bool,
     suspended: bool,
 }
 
 impl UsbIpBusInner {
     /// Returns the first enpoint, that is not already initialized or `None`,
     /// if all are already in use.
-    fn next_available_endpoint(&self) -> Option<usize> {
-        for i in 1..NUM_ENDPOINTS {
-            if self.endpoint[i].is_none() {
-                return Some(i);
+    fn next_available_endpoint(&self, direction: UsbDirection) -> Option<usize> {
+        match direction {
+            UsbDirection::In => {
+                for i in 1..NUM_ENDPOINTS {
+                    if self.endpoint[i].in_ep.is_none() {
+                        return Some(i);
+                    }
+                }
+            }
+            UsbDirection::Out => {
+                for i in 1..NUM_ENDPOINTS {
+                    if self.endpoint[i].out_ep.is_none() {
+                        return Some(i);
+                    }
+                }
             }
         }
 
@@ -56,10 +73,7 @@ impl UsbIpBusInner {
             return Err(UsbError::InvalidEndpoint);
         }
 
-        match self.endpoint[ep_addr] {
-            Some(ref mut endpoint) => Ok(endpoint),
-            None => return Err(UsbError::InvalidEndpoint),
-        }
+        Ok(&mut self.endpoint[ep_addr])
     }
 }
 
@@ -70,8 +84,9 @@ impl UsbIpBus {
     /// Create a new [`UsbIpBus`].
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let new_bus = Self(Arc::new(Mutex::new(UsbIpBusInner {
-            endpoint: [None; NUM_ENDPOINTS],
+            endpoint: [Endpoint::default(); NUM_ENDPOINTS],
             device_address: 0,
+            reset: true,
             suspended: false,
         })));
 
@@ -106,7 +121,7 @@ impl UsbBus for UsbIpBus {
                 }
             }
             None => inner
-                .next_available_endpoint()
+                .next_available_endpoint(ep_dir)
                 .ok_or(UsbError::EndpointMemoryOverflow)?,
         };
 
@@ -118,13 +133,16 @@ impl UsbBus for UsbIpBus {
         // }
 
         // initialize the endpoint
-        *endpoint = Some(Endpoint {
-            direction: ep_dir,
+        let ep_conf = EndpointConf {
             ty: ep_type,
             max_packet_size,
             interval,
-            stalled: false,
-        });
+        };
+        match ep_dir {
+            UsbDirection::In => endpoint.in_ep = Some(ep_conf),
+            UsbDirection::Out => endpoint.out_ep = Some(ep_conf),
+        }
+
         log::info!(
             "initialized new endpoint {:?} as address {:?}",
             endpoint,
@@ -135,11 +153,11 @@ impl UsbBus for UsbIpBus {
     }
 
     fn enable(&mut self) {
-        todo!()
+        log::info!("usb device is being enabled");
     }
 
     fn reset(&self) {
-        todo!()
+        log::info!("usb device is being reset");
     }
 
     fn set_device_address(&self, addr: u8) {
@@ -149,11 +167,13 @@ impl UsbBus for UsbIpBus {
         inner.device_address = addr;
     }
 
-    fn write(&self, _ep_addr: EndpointAddress, _buf: &[u8]) -> UsbResult<usize> {
+    fn write(&self, ep_addr: EndpointAddress, _buf: &[u8]) -> UsbResult<usize> {
+        log::debug!("write request at endpoint {}", ep_addr.index());
         todo!()
     }
 
-    fn read(&self, _ep_addr: EndpointAddress, _buf: &mut [u8]) -> UsbResult<usize> {
+    fn read(&self, ep_addr: EndpointAddress, _buf: &mut [u8]) -> UsbResult<usize> {
+        log::debug!("read request at endpoint {}", ep_addr.index());
         todo!()
     }
 
@@ -208,10 +228,20 @@ impl UsbBus for UsbIpBus {
 
     fn poll(&self) -> PollResult {
         let inner = self.lock();
+        log::debug!("usb device is being polled");
+
+        if inner.reset {
+            log::debug!("device is in reset state");
+            return PollResult::Reset;
+        }
 
         if inner.suspended {
+            log::debug!("device is suspended");
             return PollResult::Suspend;
         }
-        todo!()
+
+        // TODO: Check if data is available
+
+        PollResult::None
     }
 }
