@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpHeader {
-   version: u16,
-   command: u16,
-   status: u32,
+   pub version: u16,
+   pub command: u16,
+   pub status: u32,
 }
 
 pub enum OpRequest {
-   ListDevices,
-   ConnectDevice(String),
+   ListDevices(OpHeader),
+   ConnectDevice(OpHeader, String),
 }
 
 impl OpRequest {
@@ -40,7 +40,7 @@ impl OpRequest {
       match header.command {
          0x8005 => {
             log::info!("received request to list devices");
-            Some(Self::ListDevices)
+            Some(Self::ListDevices(header))
          }
          0x8003 => {
             if !data[8..].len() == 32 {
@@ -54,7 +54,7 @@ impl OpRequest {
 
             log::info!("connect request for bus id {}", bus_id);
 
-            Some(Self::ConnectDevice(bus_id.to_string()))
+            Some(Self::ConnectDevice(header, bus_id.to_string()))
          }
          _ => {
             log::warn!("received request with unknown command {}", header.command);
@@ -66,11 +66,11 @@ impl OpRequest {
 
 #[derive(Debug, Clone)]
 pub struct OpResponse {
-   version: u16,
-   path: String,
-   bus_id: String,
-   descriptor: OpDeviceDescriptor,
-   cmd: OpResponseCommand,
+   pub version: u16,
+   pub path: String,
+   pub bus_id: String,
+   pub descriptor: OpDeviceDescriptor,
+   pub cmd: OpResponseCommand,
 }
 
 #[derive(Debug, Clone)]
@@ -138,25 +138,25 @@ impl OpResponse {
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpDeviceDescriptor {
-   busnum: u32,
-   devnum: u32,
-   speed: u32,
-   vendor: u16,
-   product: u16,
-   bcd_device: u16,
-   device_class: u8,
-   device_subclass: u8,
-   device_protocol: u8,
-   configuration_value: u8,
-   num_configurations: u8,
-   num_interfaces: u8,
+   pub busnum: u32,
+   pub devnum: u32,
+   pub speed: u32,
+   pub vendor: u16,
+   pub product: u16,
+   pub bcd_device: u16,
+   pub device_class: u8,
+   pub device_subclass: u8,
+   pub device_protocol: u8,
+   pub configuration_value: u8,
+   pub num_configurations: u8,
+   pub num_interfaces: u8,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpInterfaceDescriptor {
-   interface_class: u8,
-   interface_subclass: u8,
-   interface_protocol: u8,
-   padding: u8,
+   pub interface_class: u8,
+   pub interface_subclass: u8,
+   pub interface_protocol: u8,
+   pub padding: u8,
 }

@@ -32,11 +32,11 @@ pub struct Endpoint {
 }
 
 #[derive(Debug)]
-pub struct UsbIpBusInner {
-    endpoint: [Endpoint; NUM_ENDPOINTS],
-    device_address: u8,
-    reset: bool,
-    suspended: bool,
+pub(crate) struct UsbIpBusInner {
+    pub endpoint: [Endpoint; NUM_ENDPOINTS],
+    pub device_address: u8,
+    pub reset: bool,
+    pub suspended: bool,
 }
 
 impl UsbIpBusInner {

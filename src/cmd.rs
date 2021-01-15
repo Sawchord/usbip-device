@@ -15,7 +15,7 @@ pub enum UsbIpRequest {
 }
 
 impl UsbIpRequest {
-   pub fn from_slice(data: &mut [u8]) -> Option<Self> {
+   pub fn from_slice(data: &[u8]) -> Option<Self> {
       // Parse header
       if data.len() < 12 {
          log::warn!("received packet that is too short");
