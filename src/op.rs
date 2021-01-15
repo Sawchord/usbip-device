@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -8,6 +9,26 @@ pub struct OpHeader {
    pub status: u32,
 }
 
+impl OpHeader {
+   fn to_array(&self) -> [u8; 8] {
+      let mut result = [0; 8];
+
+      result[0..2].copy_from_slice(&self.version.to_be_bytes());
+      result[2..4].copy_from_slice(&self.command.to_be_bytes());
+      result[4..8].copy_from_slice(&self.status.to_be_bytes());
+
+      result
+   }
+
+   fn from_slice(data: &[u8]) -> Self {
+      Self {
+         version: u16::from_be_bytes(data[0..2].try_into().unwrap()),
+         command: u16::from_be_bytes(data[2..4].try_into().unwrap()),
+         status: u32::from_be_bytes(data[4..8].try_into().unwrap()),
+      }
+   }
+}
+
 pub enum OpRequest {
    ListDevices(OpHeader),
    ConnectDevice(OpHeader, String),
@@ -15,18 +36,12 @@ pub enum OpRequest {
 
 impl OpRequest {
    pub fn from_slice(data: &[u8]) -> Option<Self> {
-      // Parse header
       if data.len() < 8 {
          log::warn!("received too short packet of length {}", data.len());
          return None;
       }
-      let header: OpHeader = match ssmarshal::deserialize(&data[..8]) {
-         Ok(header) => header.0,
-         Err(_) => {
-            log::warn!("failed to deserialize header");
-            return None;
-         }
-      };
+
+      let header = OpHeader::from_slice(&data[0..8]);
 
       // Check status
       if header.status != 0 {
@@ -95,40 +110,36 @@ impl OpResponse {
          status: 0,
       };
 
-      let mut header_buf = [0; 8];
-      ssmarshal::serialize(&mut header_buf, &header).unwrap();
-      result.extend_from_slice(&header_buf);
+      result.extend_from_slice(&header.to_array());
 
       // Serialize path
-      if self.path.as_bytes().len() > 256 {
+      let str_len = self.path.as_bytes().len();
+      if str_len > 256 {
          log::warn!("path is longer than 256 bytes");
          return None;
       }
 
       let mut path_buf = [0; 256];
-      path_buf.copy_from_slice(self.path.as_bytes());
+      path_buf[..str_len].copy_from_slice(self.path.as_bytes());
       result.extend_from_slice(&path_buf);
 
       // Serialize bus_id
-      if self.bus_id.as_bytes().len() > 32 {
+      let str_len = self.bus_id.as_bytes().len();
+      if str_len > 32 {
          log::warn!("bus_id is longr than 32 bytes");
          return None;
       }
 
       let mut bus_id_buf = [0; 32];
-      bus_id_buf.copy_from_slice(self.bus_id.as_bytes());
+      bus_id_buf[..str_len].copy_from_slice(self.bus_id.as_bytes());
       result.extend_from_slice(&bus_id_buf);
 
       // Serialize the Op Desciptor
-      let mut descriptor_buf = [0; 24];
-      ssmarshal::serialize(&mut descriptor_buf, &self.descriptor).unwrap();
-      result.extend_from_slice(&descriptor_buf);
+      result.extend_from_slice(&self.descriptor.to_array());
 
       // If exists, serialize the interface descriptor
       if let OpResponseCommand::ListDevices(interface) = self.cmd {
-         let mut interface_buf = [0; 4];
-         ssmarshal::serialize(&mut interface_buf, &interface).unwrap();
-         result.extend_from_slice(&interface_buf);
+         result.extend_from_slice(&interface.to_array());
       }
 
       Some(result)
@@ -152,6 +163,31 @@ pub struct OpDeviceDescriptor {
    pub num_interfaces: u8,
 }
 
+impl OpDeviceDescriptor {
+   fn to_array(&self) -> [u8; 24] {
+      let mut result = [0; 24];
+
+      result[0..4].copy_from_slice(&self.busnum.to_be_bytes());
+      result[4..8].copy_from_slice(&self.devnum.to_be_bytes());
+      result[8..12].copy_from_slice(&self.speed.to_be_bytes());
+
+      result[12..14].copy_from_slice(&self.vendor.to_be_bytes());
+      result[14..16].copy_from_slice(&self.product.to_be_bytes());
+      result[16..18].copy_from_slice(&self.bcd_device.to_be_bytes());
+
+      result[18..24].copy_from_slice(&[
+         self.device_class,
+         self.device_subclass,
+         self.device_protocol,
+         self.configuration_value,
+         self.num_configurations,
+         self.num_interfaces,
+      ]);
+
+      result
+   }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpInterfaceDescriptor {
@@ -159,4 +195,15 @@ pub struct OpInterfaceDescriptor {
    pub interface_subclass: u8,
    pub interface_protocol: u8,
    pub padding: u8,
+}
+
+impl OpInterfaceDescriptor {
+   fn to_array(&self) -> [u8; 4] {
+      [
+         self.interface_class,
+         self.interface_subclass,
+         self.interface_protocol,
+         self.padding,
+      ]
+   }
 }

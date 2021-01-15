@@ -48,6 +48,10 @@ impl SocketHandler {
          // NOTE: This call blocks. We must not hold the lock while calling it
          let bytes_read = stream.read(&mut buf).unwrap();
          log::debug!("read {} bytes from socket", bytes_read);
+         if bytes_read == 0 {
+            log::info!("connection closed");
+            break;
+         }
 
          let inner = self.bus.lock();
          let response = match inner.reset {

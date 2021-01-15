@@ -20,10 +20,10 @@ and then start the USBIP client.
 sudo modprobe vhci-hcd
 
 // List available devices
-usbip list -r "ip-address" 
+usbip list -r "localhost" 
 
 // Attach USB device
-usbip attach -r "ip-address" -b "bus-ID"
+usbip attach -r "localhost" -b "1-1"
 
 // List connected devices
 usbip port

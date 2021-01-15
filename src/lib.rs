@@ -5,7 +5,10 @@ pub(crate) mod handler;
 pub(crate) mod op;
 
 use crate::handler::SocketHandler;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex, MutexGuard},
+};
 use usb_device::{
     Result as UsbResult, UsbDirection, UsbError,
     {
@@ -23,12 +26,13 @@ pub struct EndpointConf {
     interval: u8,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Endpoint {
     in_ep: Option<EndpointConf>,
     out_ep: Option<EndpointConf>,
     stalled: bool,
-    // TODO: Input and Output buffer
+    in_buf: VecDeque<Vec<u8>>,
+    out_buf: VecDeque<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -84,7 +88,7 @@ impl UsbIpBus {
     /// Create a new [`UsbIpBus`].
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let new_bus = Self(Arc::new(Mutex::new(UsbIpBusInner {
-            endpoint: [Endpoint::default(); NUM_ENDPOINTS],
+            endpoint: <[Endpoint; NUM_ENDPOINTS]>::default(),
             device_address: 0,
             reset: true,
             suspended: false,
@@ -157,7 +161,7 @@ impl UsbBus for UsbIpBus {
     }
 
     fn reset(&self) {
-        log::info!("usb device is being reset");
+        log::debug!("usb device is being reset");
     }
 
     fn set_device_address(&self, addr: u8) {
@@ -167,14 +171,44 @@ impl UsbBus for UsbIpBus {
         inner.device_address = addr;
     }
 
-    fn write(&self, ep_addr: EndpointAddress, _buf: &[u8]) -> UsbResult<usize> {
+    fn write(&self, ep_addr: EndpointAddress, buf: &[u8]) -> UsbResult<usize> {
         log::debug!("write request at endpoint {}", ep_addr.index());
-        todo!()
+        let mut inner = self.lock();
+        let ep = inner.get_endpoint(ep_addr)?;
+
+        // Check that the buffer fits the max packet lentgth?
+        ep.in_buf.push_back(buf.to_vec());
+
+        Ok(buf.len())
     }
 
-    fn read(&self, ep_addr: EndpointAddress, _buf: &mut [u8]) -> UsbResult<usize> {
+    fn read(&self, ep_addr: EndpointAddress, buf: &mut [u8]) -> UsbResult<usize> {
         log::debug!("read request at endpoint {}", ep_addr.index());
-        todo!()
+        let mut inner = self.lock();
+        let ep = inner.get_endpoint(ep_addr)?;
+
+        // Try to get data
+        let data = match ep.out_buf.pop_front() {
+            None => {
+                log::debug!("no data available at endpoint");
+                return Err(UsbError::WouldBlock);
+            }
+            Some(data) => data,
+        };
+
+        // Check that the read buffer is large enough
+        if buf.len() < data.len() {
+            log::warn!(
+                "buffer of lenth {} to small for data of length {}",
+                buf.len(),
+                data.len()
+            );
+            ep.out_buf.push_front(data);
+            Err(UsbError::BufferOverflow)
+        } else {
+            buf.copy_from_slice(&data);
+            Ok(data.len())
+        }
     }
 
     fn set_stalled(&self, ep_addr: EndpointAddress, stalled: bool) {
@@ -240,8 +274,25 @@ impl UsbBus for UsbIpBus {
             return PollResult::Suspend;
         }
 
-        // TODO: Check if data is available
+        let mut ep_in: u16 = 0;
+        let mut ep_out: u16 = 0;
 
-        PollResult::None
+        for i in NUM_ENDPOINTS..0 {
+            let ep = &inner.endpoint[i];
+            if !ep.out_buf.is_empty() {
+                ep_out &= 1;
+            }
+
+            // TODO: Implement in_complete
+            // TODO: Implement setup
+            ep_in <<= 1;
+            ep_out <<= 1;
+        }
+
+        PollResult::Data {
+            ep_out,
+            ep_in_complete: ep_in,
+            ep_setup: 0,
+        }
     }
 }

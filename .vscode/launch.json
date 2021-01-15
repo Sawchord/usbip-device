@@ -1,0 +1,61 @@
+{
+   "version": "0.2.0",
+   "configurations": [
+      {
+         "type": "lldb",
+         "request": "launch",
+         "name": "Debug unit tests in library 'usbip-device'",
+         "cargo": {
+            "args": [
+               "test",
+               "--no-run",
+               "--lib",
+               "--package=usbip-device"
+            ],
+            "filter": {
+               "name": "usbip-device",
+               "kind": "lib"
+            }
+         },
+         "args": [],
+         "cwd": "${workspaceFolder}"
+      },
+      {
+         "type": "lldb",
+         "request": "launch",
+         "name": "Debug example 'serial_echo'",
+         "cargo": {
+            "args": [
+               "build",
+               "--example=serial_echo",
+               "--package=usbip-device"
+            ],
+            "filter": {
+               "name": "serial_echo",
+               "kind": "example"
+            }
+         },
+         "args": [],
+         "cwd": "${workspaceFolder}"
+      },
+      {
+         "type": "lldb",
+         "request": "launch",
+         "name": "Debug unit tests in example 'serial_echo'",
+         "cargo": {
+            "args": [
+               "test",
+               "--no-run",
+               "--example=serial_echo",
+               "--package=usbip-device"
+            ],
+            "filter": {
+               "name": "serial_echo",
+               "kind": "example"
+            }
+         },
+         "args": [],
+         "cwd": "${workspaceFolder}"
+      }
+   ]
+}
