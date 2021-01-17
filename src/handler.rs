@@ -44,9 +44,15 @@ impl SocketHandler {
 
    fn handle_connection(&mut self, mut stream: TcpStream) {
       loop {
-         let mut buf = [0; 4096];
+         let mut buf = [0; 8];
          // NOTE: This call blocks. We must not hold the lock while calling it
-         let bytes_read = stream.read(&mut buf).unwrap();
+         let bytes_read = match stream.read(&mut buf) {
+            Ok(bytes_read) => bytes_read,
+            Err(_) => {
+               log::warn!("connection closed unexpected");
+               break;
+            }
+         };
          log::debug!("read {} bytes from socket", bytes_read);
 
          let mut inner = self.bus.lock();
@@ -57,14 +63,14 @@ impl SocketHandler {
          }
 
          let response = match inner.reset {
-            true => match OpRequest::from_slice(&buf[..bytes_read]) {
+            true => match OpRequest::from_slice(&buf[..]) {
                Some(op) => match handle_op(&mut stream, inner, op) {
                   Some(op) => op,
                   None => break,
                },
                None => continue,
             },
-            false => match UsbIpRequest::from_slice(&buf[..bytes_read]) {
+            false => match UsbIpRequest::from_slice(&buf[..]) {
                Some(cmd) => handle_cmd(inner, cmd),
                None => continue,
             },
@@ -117,12 +123,12 @@ fn handle_op(
       }
       OpRequest::ConnectDevice(header) => {
          // Reveice the bus is packet
-         let mut data = [0; 4096];
+         let mut data = [0; 32];
 
          // NOTE: We block here while holding the lock
          // Maybe we should release lock in the meantime
          stream.read(&mut data).unwrap();
-         if data.len() == 32 {
+         if data.len() != 32 {
             log::warn!("packet has length of {}, expected 32", data[8..].len());
             return None;
          }
@@ -135,7 +141,7 @@ fn handle_op(
             }
          };
 
-         log::debug!("connect request for bus id {}", bus_id);
+         log::info!("connect request for bus id {}", bus_id);
 
          let list_response = OpResponse {
             version: header.version,
@@ -163,7 +169,7 @@ fn handle_op(
          };
 
          // Set the inner value to not reset, because we have connected the device
-         log::info!("device is leaving ready state");
+         log::info!("device is leaving reset state");
          inner.reset = false;
 
          Some(list_response.to_vec().unwrap())

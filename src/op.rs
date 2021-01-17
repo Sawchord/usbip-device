@@ -101,9 +101,12 @@ impl OpResponse {
 
       result.extend_from_slice(&header.to_array());
 
-      // This implementation can only ever export one device,
-      // therefore number of exported devices is fixed
-      result.extend_from_slice(&[0, 0, 0, 1]);
+      match self.cmd {
+         // This implementation can only ever export one device,
+         // therefore number of exported devices is fixed
+         OpResponseCommand::ListDevices(_) => result.extend_from_slice(&[0, 0, 0, 1]),
+         OpResponseCommand::ConnectDevice => (),
+      };
 
       // Serialize path
       let str_len = self.path.as_bytes().len();
