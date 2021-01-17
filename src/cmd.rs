@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::{convert::TryInto, io::Read};
 
 // TODO: Unlink commands
 
@@ -35,14 +35,25 @@ pub enum UsbIpRequest {
 }
 
 impl UsbIpRequest {
-   pub fn from_slice(data: &[u8]) -> Option<Self> {
-      // Parse header
-      if data.len() < 12 {
-         log::warn!("received packet that is too short");
-         return None;
+   pub fn read<R: Read>(reader: &mut R) -> Option<Self> {
+      // Read an parse header
+      let mut header_buf = [0; 12];
+      match reader.read(&mut header_buf) {
+         Ok(bytes_read) if bytes_read == 12 => (),
+         Ok(bytes_read) => {
+            log::warn!(
+               "received packet of length {} too short to be cmd header",
+               bytes_read
+            );
+            return None;
+         }
+         _ => {
+            log::warn!("error while receiving cmd header");
+            return None;
+         }
       }
 
-      let header = UsbIpHeader::from_slice(&data[..12]);
+      let header = UsbIpHeader::from_slice(&header_buf);
 
       log::debug!(
          "received request with seqnum {} for devid {}",
@@ -52,15 +63,33 @@ impl UsbIpRequest {
 
       match header.command {
          0x00000001 => {
-            if data.len() < 48 {
-               log::warn!("paket is to short to be a command");
-               return None;
+            let mut data_buf = [0; 36];
+            match reader.read(&mut data_buf) {
+               Ok(bytes_read) if bytes_read == 36 => (),
+               Ok(bytes_read) => {
+                  log::warn!("cmd packet of length {} is too short", bytes_read);
+                  return None;
+               }
+               _ => {
+                  log::warn!("error while receiving cmd packet");
+                  return None;
+               }
             }
 
-            let command = UsbIpCmd::from_slice(&data[12..48]);
+            let command = UsbIpCmd::from_slice(&data_buf);
+
+            // Receive the URB
+            let mut urb_buf = [0; 4096];
+            let urb_length = match reader.read(&mut urb_buf) {
+               Ok(bytes_read) => bytes_read,
+               _ => {
+                  log::warn!("error while receiving cmd packet");
+                  return None;
+               }
+            };
 
             log::info!("parsed a command request");
-            Some(Self::Cmd(command, data[48..].to_vec()))
+            Some(Self::Cmd(command, urb_buf[..urb_length].to_vec()))
          }
          _ => {
             log::warn!(

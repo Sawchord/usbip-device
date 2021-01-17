@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::{convert::TryInto, io::Read};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -34,13 +34,24 @@ pub enum OpRequest {
 }
 
 impl OpRequest {
-   pub fn from_slice(data: &[u8]) -> Option<Self> {
-      if data.len() < 8 {
-         log::warn!("received too short packet of length {}", data.len());
-         return None;
+   pub fn read<R: Read>(reader: &mut R) -> Option<Self> {
+      // Receive the header
+      let mut header_buf = [0; 8];
+      match reader.read(&mut header_buf) {
+         Ok(bytes_read) if bytes_read == 8 => (),
+         Ok(0) => return None,
+         Ok(bytes_read) => {
+            log::warn!("received too short packet of length {}", bytes_read);
+            return None;
+         }
+         _ => {
+            log::warn!("failed to reviece data from reader");
+            return None;
+         }
       }
 
-      let header = OpHeader::from_slice(&data[0..8]);
+      // Parse the header
+      let header = OpHeader::from_slice(&header_buf);
 
       // Check status
       if header.status != 0 {
@@ -57,11 +68,34 @@ impl OpRequest {
             Some(Self::ListDevices(header))
          }
          0x8003 => {
-            log::info!("received request to connect device");
+            let bus_id = OpRequest::read_bus_id(reader)?;
+            log::info!("received request to connect device {}", bus_id);
+            // TODO: Add bus_id to connect device
             Some(Self::ConnectDevice(header))
          }
          _ => {
             log::warn!("received request with unknown command {}", header.command);
+            None
+         }
+      }
+   }
+
+   fn read_bus_id<R: Read>(reader: &mut R) -> Option<String> {
+      let mut buf = [0; 32];
+      match reader.read(&mut buf) {
+         Ok(bytes_read) if bytes_read == 32 => match std::str::from_utf8(&buf) {
+            Ok(data) => Some(data.trim_matches(char::from(0)).to_string()),
+            _ => {
+               log::warn!("failed to read usb-bus id");
+               None
+            }
+         },
+         Ok(bytes_read) => {
+            log::warn!("received too short packet of length {}", bytes_read);
+            None
+         }
+         _ => {
+            log::warn!("failed to reviece data from reader");
             None
          }
       }

@@ -4,7 +4,7 @@ use crate::{
    {UsbIpBus, UsbIpBusInner},
 };
 use std::{
-   io::{Read, Write},
+   io::Write,
    net::{TcpListener, TcpStream},
    sync::MutexGuard,
 };
@@ -44,34 +44,25 @@ impl SocketHandler {
 
    fn handle_connection(&mut self, mut stream: TcpStream) {
       loop {
-         let mut buf = [0; 8];
-         // NOTE: This call blocks. We must not hold the lock while calling it
-         let bytes_read = match stream.read(&mut buf) {
-            Ok(bytes_read) => bytes_read,
-            Err(_) => {
-               log::warn!("connection closed unexpected");
-               break;
-            }
-         };
-         log::debug!("read {} bytes from socket", bytes_read);
-
-         let mut inner = self.bus.lock();
-         if bytes_read == 0 {
-            inner.reset = true;
-            log::info!("connection closed, device entering reset state");
-            break;
-         }
-
-         let response = match inner.reset {
-            true => match OpRequest::from_slice(&buf[..]) {
-               Some(op) => match handle_op(&mut stream, inner, op) {
-                  Some(op) => op,
+         let reset = self.bus.lock().reset;
+         let response = match reset {
+            // Handle Op list case
+            // NOTE: Next line blocks, do not hold lock
+            true => match OpRequest::read(&mut stream) {
+               Some(op) => match handle_op(self.bus.lock(), op) {
+                  Some(response) => response,
                   None => break,
                },
-               None => continue,
+               None => break,
             },
-            false => match UsbIpRequest::from_slice(&buf[..]) {
-               Some(cmd) => handle_cmd(inner, cmd),
+
+            // Handle connected case
+            // NOTE: Next line blocks, do not hold lock
+            false => match UsbIpRequest::read(&mut stream) {
+               Some(cmd) => match handle_cmd(self.bus.lock(), cmd) {
+                  Some(response) => response,
+                  None => break,
+               },
                None => continue,
             },
          };
@@ -82,7 +73,7 @@ impl SocketHandler {
 }
 
 fn handle_op(
-   stream: &mut TcpStream,
+   //stream: &mut TcpStream,
    mut inner: MutexGuard<UsbIpBusInner>,
    op: OpRequest,
 ) -> Option<Vec<u8>> {
@@ -122,27 +113,6 @@ fn handle_op(
          Some(list_response.to_vec().unwrap())
       }
       OpRequest::ConnectDevice(header) => {
-         // Reveice the bus is packet
-         let mut data = [0; 32];
-
-         // NOTE: We block here while holding the lock
-         // Maybe we should release lock in the meantime
-         stream.read(&mut data).unwrap();
-         if data.len() != 32 {
-            log::warn!("packet has length of {}, expected 32", data[8..].len());
-            return None;
-         }
-
-         let bus_id = match std::str::from_utf8(&data) {
-            Ok(data) => data.trim_matches(char::from(0)),
-            _ => {
-               log::warn!("failed to read usb-bus id");
-               return None;
-            }
-         };
-
-         log::info!("connect request for bus id {}", bus_id);
-
          let list_response = OpResponse {
             version: header.version,
             path: "/sys/devices/pci0000:00/0000:00:01.2/usb1/1-1".to_string(),
@@ -177,6 +147,6 @@ fn handle_op(
    }
 }
 
-fn handle_cmd(_inner: MutexGuard<UsbIpBusInner>, _cmd: UsbIpRequest) -> Vec<u8> {
+fn handle_cmd(_inner: MutexGuard<UsbIpBusInner>, _cmd: UsbIpRequest) -> Option<Vec<u8>> {
    todo!()
 }
