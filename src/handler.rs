@@ -70,7 +70,6 @@ impl SocketHandler {
             },
          };
 
-         // TODO: Handle closed stream
          stream.write(&response[..]).unwrap();
       }
    }
@@ -82,7 +81,6 @@ fn handle_op(
    op: OpRequest,
 ) -> Option<Vec<u8>> {
    match op {
-      // FIXME: List devices has a bug, probably a field is missing somewhere
       OpRequest::ListDevices(header) => {
          let list_response = OpResponse {
             version: header.version,

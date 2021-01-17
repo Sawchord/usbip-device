@@ -101,6 +101,10 @@ impl OpResponse {
 
       result.extend_from_slice(&header.to_array());
 
+      // This implementation can only ever export one device,
+      // therefore number of exported devices is fixed
+      result.extend_from_slice(&[0, 0, 0, 1]);
+
       // Serialize path
       let str_len = self.path.as_bytes().len();
       if str_len > 256 {

@@ -1,7 +1,6 @@
 use std::convert::TryInto;
 
 // TODO: Unlink commands
-// TODO: Remove ssmarshal
 
 #[repr(C)]
 #[derive(Debug, Clone)]

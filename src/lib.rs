@@ -115,7 +115,6 @@ impl UsbBus for UsbIpBus {
         let mut inner = self.lock();
 
         // Get the endpoint to initialize
-        // TODO: Check matching dir in address and ep_dir
         let endpoint_index = match ep_addr {
             Some(addr) => {
                 if addr.index() < NUM_ENDPOINTS {
