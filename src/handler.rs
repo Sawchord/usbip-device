@@ -58,7 +58,10 @@ impl SocketHandler {
 
          let response = match inner.reset {
             true => match OpRequest::from_slice(&buf[..bytes_read]) {
-               Some(op) => handle_op(inner, op),
+               Some(op) => match handle_op(&mut stream, inner, op) {
+                  Some(op) => op,
+                  None => break,
+               },
                None => continue,
             },
             false => match UsbIpRequest::from_slice(&buf[..bytes_read]) {
@@ -73,8 +76,13 @@ impl SocketHandler {
    }
 }
 
-fn handle_op(mut inner: MutexGuard<UsbIpBusInner>, op: OpRequest) -> Vec<u8> {
+fn handle_op(
+   stream: &mut TcpStream,
+   mut inner: MutexGuard<UsbIpBusInner>,
+   op: OpRequest,
+) -> Option<Vec<u8>> {
    match op {
+      // FIXME: List devices has a bug, probably a field is missing somewhere
       OpRequest::ListDevices(header) => {
          let list_response = OpResponse {
             version: header.version,
@@ -107,9 +115,30 @@ fn handle_op(mut inner: MutexGuard<UsbIpBusInner>, op: OpRequest) -> Vec<u8> {
             }),
          };
 
-         list_response.to_vec().unwrap()
+         Some(list_response.to_vec().unwrap())
       }
-      OpRequest::ConnectDevice(header, _bus_id) => {
+      OpRequest::ConnectDevice(header) => {
+         // Reveice the bus is packet
+         let mut data = [0; 4096];
+
+         // NOTE: We block here while holding the lock
+         // Maybe we should release lock in the meantime
+         stream.read(&mut data).unwrap();
+         if data.len() == 32 {
+            log::warn!("packet has length of {}, expected 32", data[8..].len());
+            return None;
+         }
+
+         let bus_id = match std::str::from_utf8(&data) {
+            Ok(data) => data.trim_matches(char::from(0)),
+            _ => {
+               log::warn!("failed to read usb-bus id");
+               return None;
+            }
+         };
+
+         log::debug!("connect request for bus id {}", bus_id);
+
          let list_response = OpResponse {
             version: header.version,
             path: "/sys/devices/pci0000:00/0000:00:01.2/usb1/1-1".to_string(),
@@ -139,7 +168,7 @@ fn handle_op(mut inner: MutexGuard<UsbIpBusInner>, op: OpRequest) -> Vec<u8> {
          log::info!("device is leaving ready state");
          inner.reset = false;
 
-         list_response.to_vec().unwrap()
+         Some(list_response.to_vec().unwrap())
       }
    }
 }

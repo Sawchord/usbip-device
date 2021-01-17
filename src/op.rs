@@ -30,7 +30,7 @@ impl OpHeader {
 
 pub enum OpRequest {
    ListDevices(OpHeader),
-   ConnectDevice(OpHeader, String),
+   ConnectDevice(OpHeader),
 }
 
 impl OpRequest {
@@ -57,18 +57,8 @@ impl OpRequest {
             Some(Self::ListDevices(header))
          }
          0x8003 => {
-            if !data[8..].len() == 32 {
-               log::warn!("packet has length of {}, expected 32", data[8..].len());
-            }
-
-            let bus_id = match std::str::from_utf8(&data) {
-               Ok(data) => data.trim_matches(char::from(0)),
-               _ => return None,
-            };
-
-            log::info!("connect request for bus id {}", bus_id);
-
-            Some(Self::ConnectDevice(header, bus_id.to_string()))
+            log::info!("received request to connect device");
+            Some(Self::ConnectDevice(header))
          }
          _ => {
             log::warn!("received request with unknown command {}", header.command);
