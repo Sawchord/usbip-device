@@ -5,9 +5,9 @@ use std::{convert::TryInto, io::Read};
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct UsbIpHeader {
-   command: u32,
-   seqnum: u32,
-   devid: u32,
+   pub command: u32,
+   pub seqnum: u32,
+   pub devid: u32,
 }
 
 impl UsbIpHeader {
@@ -31,7 +31,7 @@ impl UsbIpHeader {
 }
 
 pub enum UsbIpRequest {
-   Cmd(UsbIpCmd, Vec<u8>),
+   Cmd(UsbIpHeader, UsbIpCmd, Vec<u8>),
 }
 
 impl UsbIpRequest {
@@ -89,7 +89,7 @@ impl UsbIpRequest {
             };
 
             log::info!("parsed a command request");
-            Some(Self::Cmd(command, urb_buf[..urb_length].to_vec()))
+            Some(Self::Cmd(header, command, urb_buf[..urb_length].to_vec()))
          }
          _ => {
             log::warn!(
@@ -105,14 +105,14 @@ impl UsbIpRequest {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct UsbIpCmd {
-   direction: u32,
-   ep: u32,
-   transfer_flags: u32,
-   transfer_buffer_length: u32,
-   start_frame: u32,
-   number_of_packets: u32,
-   interval_or_err_count: u32,
-   setup: u64,
+   pub direction: u32,
+   pub ep: u32,
+   pub transfer_flags: u32,
+   pub transfer_buffer_length: u32,
+   pub start_frame: u32,
+   pub number_of_packets: u32,
+   pub interval_or_err_count: u32,
+   pub setup: u64,
 }
 
 impl UsbIpCmd {
@@ -149,12 +149,12 @@ impl UsbIpCmd {
 // TODO: Implement buffer flag integrity check
 
 pub struct UsbIpResponse {
-   header: UsbIpHeader,
-   cmd: UsbIpResponseCmd,
-   data: Vec<u8>,
+   pub header: UsbIpHeader,
+   pub cmd: UsbIpResponseCmd,
+   pub data: Vec<u8>,
 }
 
-enum UsbIpResponseCmd {
+pub enum UsbIpResponseCmd {
    Cmd(UsbIpCmd),
 }
 

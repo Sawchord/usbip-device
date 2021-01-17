@@ -1,5 +1,5 @@
 use crate::{
-   cmd::UsbIpRequest,
+   cmd::{UsbIpCmd, UsbIpHeader, UsbIpRequest, UsbIpResponse, UsbIpResponseCmd},
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
    {UsbIpBus, UsbIpBusInner},
 };
@@ -8,6 +8,7 @@ use std::{
    net::{TcpListener, TcpStream},
    sync::MutexGuard,
 };
+use usb_device::UsbDirection;
 
 #[derive(Debug)]
 pub struct SocketHandler {
@@ -147,6 +148,97 @@ fn handle_op(
    }
 }
 
-fn handle_cmd(_inner: MutexGuard<UsbIpBusInner>, _cmd: UsbIpRequest) -> Option<Vec<u8>> {
-   todo!()
+fn handle_cmd(mut inner: MutexGuard<UsbIpBusInner>, cmd: UsbIpRequest) -> Option<Vec<u8>> {
+   match cmd {
+      UsbIpRequest::Cmd(header, cmd, data) => {
+         // Get the endpoint and push packets to input
+         let ep = inner.get_endpoint(cmd.ep as usize).ok()?;
+
+         let (dir, conf) = match cmd.direction {
+            // TODO: Handle invalid endpoint
+            0 => (UsbDirection::Out, ep.out_ep.unwrap()),
+            1 => (UsbDirection::In, ep.in_ep.unwrap()),
+            _ => {
+               log::warn!("received command with unknown direction");
+               return None;
+            }
+         };
+
+         log::info!(
+            "received cmd for dev {} endpoint {}, seqnum {}, direction {:?}",
+            header.devid,
+            cmd.ep,
+            header.devid,
+            dir,
+         );
+
+         // // check that length of the packets matches
+         // if conf.max_packet_size as usize * cmd.number_of_packets as usize != data.len() {
+         //    log::warn!("packet length does not match number of packets");
+         //    return None;
+         // }
+
+         let response = match dir {
+            UsbDirection::Out => {
+               // if output, pass the data into the correct buffers
+               for chunk in data.chunks(conf.max_packet_size as usize) {
+                  ep.out_buf.push_back(chunk.to_vec());
+               }
+
+               // return packet
+               UsbIpResponse {
+                  header: UsbIpHeader {
+                     command: 0x0003,
+                     seqnum: header.seqnum,
+                     devid: header.devid,
+                  },
+                  cmd: UsbIpResponseCmd::Cmd(UsbIpCmd {
+                     // TODO: Check these settings
+                     direction: 0,
+                     ep: cmd.ep,
+                     transfer_flags: 0,
+                     transfer_buffer_length: 0,
+                     start_frame: 0,
+                     number_of_packets: 0,
+                     interval_or_err_count: cmd.interval_or_err_count,
+                     setup: 0,
+                  }),
+                  data: vec![],
+               }
+            }
+            UsbDirection::In => {
+               // Read the data into an output buffer
+               let mut output = vec![];
+               let mut num_pkgs = 0;
+               for pkg in ep.in_buf.drain(..) {
+                  num_pkgs += 1;
+                  output.extend_from_slice(&pkg);
+               }
+
+               // return packet
+               UsbIpResponse {
+                  header: UsbIpHeader {
+                     command: 0x0003,
+                     seqnum: header.seqnum,
+                     devid: header.devid,
+                  },
+                  cmd: UsbIpResponseCmd::Cmd(UsbIpCmd {
+                     // TODO: Check these settings
+                     direction: 0,
+                     ep: cmd.ep,
+                     transfer_flags: 0,
+                     transfer_buffer_length: output.len() as u32,
+                     start_frame: 0,
+                     number_of_packets: num_pkgs,
+                     interval_or_err_count: cmd.interval_or_err_count,
+                     setup: 0,
+                  }),
+                  data: output,
+               }
+            }
+         };
+
+         Some(response.to_vec().unwrap())
+      }
+   }
 }

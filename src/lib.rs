@@ -20,19 +20,19 @@ use usb_device::{
 const NUM_ENDPOINTS: usize = 16;
 
 #[derive(Debug, Clone, Copy)]
-pub struct EndpointConf {
-    ty: EndpointType,
-    max_packet_size: u16,
-    interval: u8,
+pub(crate) struct EndpointConf {
+    pub ty: EndpointType,
+    pub max_packet_size: u16,
+    pub interval: u8,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Endpoint {
-    in_ep: Option<EndpointConf>,
-    out_ep: Option<EndpointConf>,
-    stalled: bool,
-    in_buf: VecDeque<Vec<u8>>,
-    out_buf: VecDeque<Vec<u8>>,
+    pub(crate) in_ep: Option<EndpointConf>,
+    pub(crate) out_ep: Option<EndpointConf>,
+    pub(crate) stalled: bool,
+    pub(crate) in_buf: VecDeque<Vec<u8>>,
+    pub(crate) out_buf: VecDeque<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -69,15 +69,15 @@ impl UsbIpBusInner {
 
     /// Returns the requested endpoint if it exists and
     /// [`UsbError::InvalidEndpoint`] otherwise.
-    fn get_endpoint(&mut self, ep: EndpointAddress) -> UsbResult<&mut Endpoint> {
-        let ep_addr = ep.index();
+    fn get_endpoint(&mut self, ep: usize) -> UsbResult<&mut Endpoint> {
+        //let ep_addr = ep.index();
 
-        if ep_addr >= NUM_ENDPOINTS {
+        if ep >= NUM_ENDPOINTS {
             log::error!("attempt to access out-of-bounds endpoint {:?}", ep);
             return Err(UsbError::InvalidEndpoint);
         }
 
-        Ok(&mut self.endpoint[ep_addr])
+        Ok(&mut self.endpoint[ep])
     }
 }
 
@@ -173,7 +173,7 @@ impl UsbBus for UsbIpBus {
     fn write(&self, ep_addr: EndpointAddress, buf: &[u8]) -> UsbResult<usize> {
         log::debug!("write request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
-        let ep = inner.get_endpoint(ep_addr)?;
+        let ep = inner.get_endpoint(ep_addr.index())?;
 
         // Check that the buffer fits the max packet lentgth?
         ep.in_buf.push_back(buf.to_vec());
@@ -184,7 +184,7 @@ impl UsbBus for UsbIpBus {
     fn read(&self, ep_addr: EndpointAddress, buf: &mut [u8]) -> UsbResult<usize> {
         log::debug!("read request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
-        let ep = inner.get_endpoint(ep_addr)?;
+        let ep = inner.get_endpoint(ep_addr.index())?;
 
         // Try to get data
         let data = match ep.out_buf.pop_front() {
@@ -213,7 +213,7 @@ impl UsbBus for UsbIpBus {
     fn set_stalled(&self, ep_addr: EndpointAddress, stalled: bool) {
         let mut inner = self.lock();
 
-        let endpoint = match inner.get_endpoint(ep_addr) {
+        let endpoint = match inner.get_endpoint(ep_addr.index()) {
             Ok(endpoint) => endpoint,
             _ => return,
         };
@@ -229,7 +229,7 @@ impl UsbBus for UsbIpBus {
     fn is_stalled(&self, ep_addr: EndpointAddress) -> bool {
         let mut inner = self.lock();
 
-        let endpoint = match inner.get_endpoint(ep_addr) {
+        let endpoint = match inner.get_endpoint(ep_addr.index()) {
             Ok(endpoint) => endpoint,
             _ => return false,
         };
