@@ -79,14 +79,23 @@ impl UsbIpRequest {
             let command = UsbIpCmd::from_slice(&data_buf);
 
             // Receive the URB
-            let mut urb_buf = vec![0; 4096];
-            let _urb_length = match reader.read(&mut urb_buf) {
-               Ok(bytes_read) => bytes_read,
+            let expected_length = command.number_of_packets * command.transfer_buffer_length;
+            let mut urb_buf = vec![0; expected_length as usize];
+            match reader.read(&mut urb_buf) {
+               Ok(bytes_read) if bytes_read == expected_length as usize => (),
+               Ok(bytes_read) => {
+                  log::warn!(
+                     "received {} bytes but expected {}",
+                     bytes_read,
+                     expected_length
+                  );
+                  return None;
+               }
                _ => {
                   log::warn!("error while receiving cmd packet");
                   return None;
                }
-            };
+            }
 
             log::info!("parsed a command request");
             Some(Self::Cmd(header, command, urb_buf))

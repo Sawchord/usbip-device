@@ -31,6 +31,8 @@ pub struct Endpoint {
     pub(crate) in_ep: Option<EndpointConf>,
     pub(crate) out_ep: Option<EndpointConf>,
     pub(crate) stalled: bool,
+    pub(crate) setup_flag: bool,
+    pub(crate) in_complete_flag: bool,
     pub(crate) in_buf: VecDeque<Vec<u8>>,
     pub(crate) out_buf: VecDeque<Vec<u8>>,
 }
@@ -175,6 +177,8 @@ impl UsbBus for UsbIpBus {
         let mut inner = self.lock();
         let ep = inner.get_endpoint(ep_addr.index())?;
 
+        // FIXME: Only allow one packet?
+
         // Check that the buffer fits the max packet lentgth?
         ep.in_buf.push_back(buf.to_vec());
 
@@ -198,14 +202,14 @@ impl UsbBus for UsbIpBus {
         // Check that the read buffer is large enough
         if buf.len() < data.len() {
             log::warn!(
-                "buffer of lenth {} to small for data of length {}",
+                "buffer of length {} too small for data of length {}",
                 buf.len(),
                 data.len()
             );
             ep.out_buf.push_front(data);
             Err(UsbError::BufferOverflow)
         } else {
-            buf.copy_from_slice(&data);
+            buf[..data.len()].copy_from_slice(&data);
             Ok(data.len())
         }
     }
@@ -218,7 +222,7 @@ impl UsbBus for UsbIpBus {
             _ => return,
         };
 
-        log::info!(
+        log::debug!(
             "setting endpoint {:?} to stalled state {}",
             ep_addr,
             stalled
@@ -260,7 +264,7 @@ impl UsbBus for UsbIpBus {
     }
 
     fn poll(&self) -> PollResult {
-        let inner = self.lock();
+        let mut inner = self.lock();
         log::debug!("usb device is being polled");
 
         if inner.reset {
@@ -275,23 +279,33 @@ impl UsbBus for UsbIpBus {
 
         let mut ep_in: u16 = 0;
         let mut ep_out: u16 = 0;
+        let mut ep_setup: u16 = 0;
 
-        for i in NUM_ENDPOINTS..0 {
-            let ep = &inner.endpoint[i];
-            if !ep.out_buf.is_empty() {
-                ep_out &= 1;
-            }
-
-            // TODO: Implement in_complete
-            // TODO: Implement setup
+        for i in (0..NUM_ENDPOINTS).into_iter().rev() {
             ep_in <<= 1;
             ep_out <<= 1;
+            ep_setup <<= 1;
+
+            let ep = &mut inner.endpoint[i];
+            if !ep.out_buf.is_empty() {
+                ep_out |= 1;
+            }
+
+            if ep.in_complete_flag {
+                ep.in_complete_flag = false;
+                ep_in |= 1;
+            }
+
+            if ep.setup_flag {
+                ep.setup_flag = false;
+                ep_setup |= 1;
+            }
         }
 
         PollResult::Data {
             ep_out,
             ep_in_complete: ep_in,
-            ep_setup: 0,
+            ep_setup,
         }
     }
 }

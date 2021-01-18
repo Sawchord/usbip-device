@@ -161,6 +161,13 @@ fn handle_cmd(mut inner: MutexGuard<UsbIpBusInner>, cmd: UsbIpRequest) -> Option
             data.len(),
          );
 
+         // check wether we have a setup packet
+         if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
+            log::info!("setup was requested");
+            ep.out_buf.push_back(cmd.setup.to_vec());
+            ep.setup_flag = true;
+         }
+
          // pass the data into the correct buffers
          for chunk in data.chunks(ep.out_ep.unwrap().max_packet_size as usize) {
             ep.out_buf.push_back(chunk.to_vec());
@@ -170,6 +177,7 @@ fn handle_cmd(mut inner: MutexGuard<UsbIpBusInner>, cmd: UsbIpRequest) -> Option
          let mut output = vec![];
          let mut num_pkgs = 0;
          for pkg in ep.in_buf.drain(..) {
+            ep.in_complete_flag = true;
             num_pkgs += 1;
             output.extend_from_slice(&pkg);
          }
