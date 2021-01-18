@@ -79,8 +79,8 @@ impl UsbIpRequest {
             let command = UsbIpCmd::from_slice(&data_buf);
 
             // Receive the URB
-            let mut urb_buf = [0; 4096];
-            let urb_length = match reader.read(&mut urb_buf) {
+            let mut urb_buf = vec![0; 4096];
+            let _urb_length = match reader.read(&mut urb_buf) {
                Ok(bytes_read) => bytes_read,
                _ => {
                   log::warn!("error while receiving cmd packet");
@@ -89,7 +89,7 @@ impl UsbIpRequest {
             };
 
             log::info!("parsed a command request");
-            Some(Self::Cmd(header, command, urb_buf[..urb_length].to_vec()))
+            Some(Self::Cmd(header, command, urb_buf))
          }
          _ => {
             log::warn!(
@@ -112,7 +112,7 @@ pub struct UsbIpCmd {
    pub start_frame: u32,
    pub number_of_packets: u32,
    pub interval_or_err_count: u32,
-   pub setup: u64,
+   pub setup: [u8; 8],
 }
 
 impl UsbIpCmd {
@@ -126,7 +126,7 @@ impl UsbIpCmd {
       result[16..20].copy_from_slice(&self.start_frame.to_be_bytes());
       result[20..24].copy_from_slice(&self.number_of_packets.to_be_bytes());
       result[24..28].copy_from_slice(&self.interval_or_err_count.to_be_bytes());
-      result[28..36].copy_from_slice(&self.setup.to_be_bytes());
+      result[28..36].copy_from_slice(&self.setup);
 
       result
    }
@@ -140,7 +140,7 @@ impl UsbIpCmd {
          start_frame: u32::from_be_bytes(data[16..20].try_into().unwrap()),
          number_of_packets: u32::from_be_bytes(data[20..24].try_into().unwrap()),
          interval_or_err_count: u32::from_be_bytes(data[24..28].try_into().unwrap()),
-         setup: u64::from_be_bytes(data[28..36].try_into().unwrap()),
+         setup: data[28..36].try_into().unwrap(),
       }
    }
 }

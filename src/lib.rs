@@ -17,7 +17,7 @@ use usb_device::{
     },
 };
 
-const NUM_ENDPOINTS: usize = 16;
+const NUM_ENDPOINTS: usize = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EndpointConf {
