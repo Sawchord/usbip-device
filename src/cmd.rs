@@ -81,19 +81,22 @@ impl UsbIpRequest {
             // Receive the URB
             let expected_length = command.number_of_packets * command.transfer_buffer_length;
             let mut urb_buf = vec![0; expected_length as usize];
-            match reader.read(&mut urb_buf) {
-               Ok(bytes_read) if bytes_read == expected_length as usize => (),
-               Ok(bytes_read) => {
-                  log::warn!(
-                     "received {} bytes but expected {}",
-                     bytes_read,
-                     expected_length
-                  );
-                  return None;
-               }
-               _ => {
-                  log::warn!("error while receiving cmd packet");
-                  return None;
+
+            if expected_length != 0 {
+               match reader.read(&mut urb_buf) {
+                  Ok(bytes_read) if bytes_read == expected_length as usize => (),
+                  Ok(bytes_read) => {
+                     log::warn!(
+                        "received {} bytes but expected {}",
+                        bytes_read,
+                        expected_length
+                     );
+                     return None;
+                  }
+                  _ => {
+                     log::warn!("error while receiving cmd packet");
+                     return None;
+                  }
                }
             }
 

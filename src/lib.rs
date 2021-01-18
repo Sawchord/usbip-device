@@ -199,19 +199,22 @@ impl UsbBus for UsbIpBus {
             Some(data) => data,
         };
 
-        // Check that the read buffer is large enough
+        // TODO: Check that the read buffer is large enough
+        //if data.len() > ep.out_ep.
+        // log::warn!(
+        //     "buffer of length {} too small for data of length {}",
+        //     buf.len(),
+        //     data.len()
+        // );
+        // ep.out_buf.push_front(data);
+        // Err(UsbError::BufferOverflow)
+
         if buf.len() < data.len() {
-            log::warn!(
-                "buffer of length {} too small for data of length {}",
-                buf.len(),
-                data.len()
-            );
-            ep.out_buf.push_front(data);
-            Err(UsbError::BufferOverflow)
+            buf.copy_from_slice(&data[..buf.len()]);
         } else {
             buf[..data.len()].copy_from_slice(&data);
-            Ok(data.len())
         }
+        Ok(data.len())
     }
 
     fn set_stalled(&self, ep_addr: EndpointAddress, stalled: bool) {
