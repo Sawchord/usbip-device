@@ -27,7 +27,7 @@ impl SocketHandler {
 
 impl UsbIpBusInner {
    // TODO: Return UsbError in result
-   pub fn handle_out(&mut self) {
+   pub fn handle_socket(&mut self) {
       match self.handler.connection {
          // If not connected, listen for new connections
          None => match self.handler.listener.accept() {
@@ -35,9 +35,10 @@ impl UsbIpBusInner {
                log::info!("new connection from: {}", addr);
                self.handler.connection = Some(connection)
             }
-            Err(err) if err.kind() == ErrorKind::WouldBlock => return,
+            Err(err) if err.kind() == ErrorKind::WouldBlock => (),
             Err(err) => panic!("unexpected error: {}", err),
          },
+
          // If connected, receive the data
          Some(ref mut stream) => {
             match self.reset {
@@ -68,43 +69,64 @@ impl UsbIpBusInner {
                      }
                      Err(err) => panic!("unexpected error {}", err),
                   };
-                  self.handle_cmd_out(cmd);
+                  self.handle_cmd(cmd);
                }
             }
          }
       }
    }
 
-   pub fn handle_in(&mut self) {
+   pub fn send_pending(&mut self) {
       for (ep_idx, ep) in self.endpoint.iter_mut().enumerate() {
-         for output in ep.in_buf.drain(..) {
-            ep.in_complete_flag = true;
-            let response = UsbIpResponse {
-               header: UsbIpHeader {
-                  command: 0x0003,
-                  seqnum: ep.seqnum,
-                  devid: 2,
-               },
-               cmd: UsbIpResponseCmd::Cmd(UsbIpCmd {
-                  // TODO: Check these settings
-                  direction: 0,
-                  ep: ep_idx as u32,
-                  transfer_flags: 0,
-                  transfer_buffer_length: output.len() as u32,
-                  start_frame: 0,
-                  number_of_packets: 1,
-                  interval_or_err_count: 0,
-                  setup: [0, 0, 0, 0, 0, 0, 0, 0],
-               }),
-               data: output,
-            };
-            self
-               .handler
-               .connection
-               .as_mut()
-               .unwrap()
-               .write(&response.to_vec().unwrap())
-               .unwrap();
+         match ep.bytes_requested {
+            None => (),
+            Some(bytes_requested) => {
+               let conf = ep.get_in().unwrap();
+               if conf.data.is_empty() {
+                  continue;
+               }
+
+               let mut out_buf = vec![];
+               while let Some(data) = conf.data.pop_front() {
+                  out_buf.extend_from_slice(&data);
+
+                  if out_buf.len() == bytes_requested as usize {
+                     break;
+                  }
+
+                  if out_buf.len() >= bytes_requested as usize {
+                     panic!("left some bytes unread");
+                  }
+               }
+
+               ep.in_complete_flag = true;
+               let response = UsbIpResponse {
+                  header: UsbIpHeader {
+                     command: 0x0003,
+                     seqnum: ep.seqnum,
+                     devid: 2,
+                  },
+                  cmd: UsbIpResponseCmd::Cmd(UsbIpCmd {
+                     // TODO: Check these settings
+                     direction: 0,
+                     ep: ep_idx as u32,
+                     transfer_flags: 0,
+                     transfer_buffer_length: out_buf.len() as u32,
+                     start_frame: 0,
+                     number_of_packets: 0,
+                     interval_or_err_count: 0,
+                     setup: [0, 0, 0, 0, 0, 0, 0, 0],
+                  }),
+                  data: out_buf,
+               };
+               self
+                  .handler
+                  .connection
+                  .as_mut()
+                  .unwrap()
+                  .write_all(&response.to_vec().unwrap())
+                  .unwrap();
+            }
          }
       }
    }
@@ -150,7 +172,7 @@ impl UsbIpBusInner {
                .connection
                .as_mut()
                .unwrap()
-               .write(&list_response.to_vec().unwrap())
+               .write_all(&list_response.to_vec().unwrap())
                .unwrap();
          }
          OpRequest::ConnectDevice(header) => {
@@ -188,26 +210,23 @@ impl UsbIpBusInner {
                .connection
                .as_mut()
                .unwrap()
-               .write(&list_response.to_vec().unwrap())
+               .write_all(&list_response.to_vec().unwrap())
                .unwrap();
          }
       }
    }
 
-   /// Handles an outbound cmd packet, appends packets if necessary
-   /// Sends return message if necessary
-   fn handle_cmd_out(&mut self, cmd: UsbIpRequest) {
+   fn handle_cmd(&mut self, cmd: UsbIpRequest) {
       match cmd {
          UsbIpRequest::Cmd(header, cmd, data) => {
             log::info!(
-               "received cmd for dev {} endpoint {}, seqnum {}, data length {}",
+               "received cmd for dev {} endpoint {}, seqnum {}",
                header.devid,
                cmd.ep,
                header.seqnum,
-               data.len(),
             );
 
-            // Get the endpoint and push packets to input
+            // Get the endpoint
             let ep = match self.get_endpoint(cmd.ep as usize) {
                Ok(ep) => ep,
                Err(err) => {
@@ -215,7 +234,6 @@ impl UsbIpBusInner {
                   return;
                }
             };
-
             if header.seqnum < ep.seqnum {
                log::warn!("received seqnum is too small");
             }
@@ -224,13 +242,25 @@ impl UsbIpBusInner {
             // check wether we have a setup packet
             if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
                log::info!("setup was requested");
-               ep.out_buf.push_back(cmd.setup.to_vec());
+               ep.get_out().unwrap().data.push_back(cmd.setup.to_vec());
                ep.setup_flag = true;
             }
 
-            // pass the data into the correct buffers
-            for chunk in data.chunks(ep.out_ep.unwrap().max_packet_size as usize) {
-               ep.out_buf.push_back(chunk.to_vec());
+            // If this is an output packet, output
+            if cmd.direction == 0 {
+               let ep_out = ep.get_out().unwrap();
+
+               // pass the data into the correct buffers
+               for chunk in data.chunks(ep_out.max_packet_size as usize) {
+                  ep_out.data.push_back(chunk.to_vec());
+               }
+            }
+
+            // If this is an in packet, we set the bytes requested flag
+            // Also, we try to service the in data asap
+            if cmd.direction == 1 {
+               ep.bytes_requested = Some(cmd.transfer_buffer_length);
+               self.send_pending();
             }
          }
       }

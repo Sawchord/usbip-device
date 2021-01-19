@@ -76,23 +76,27 @@ impl UsbIpRequest {
             reader.read_exact(&mut data_buf)?;
             let command = UsbIpCmd::from_slice(&data_buf);
 
-            // Receive the URB
-            let expected_length = command.number_of_packets * command.transfer_buffer_length;
-            let mut urb_buf = vec![0; expected_length as usize];
+            // Receive the URB if this is a OUT packet
+            let urb_buf = if command.direction == 0 {
+               let mut urb_buf = vec![0; command.transfer_buffer_length as usize];
 
-            if expected_length != 0 {
-               reader.read_exact(&mut urb_buf)?;
-            }
+               // NOTE: Reading 0 bytes would still block the reader
+               if command.transfer_buffer_length != 0 {
+                  reader.read_exact(&mut urb_buf)?;
+               }
+
+               urb_buf
+            } else {
+               vec![]
+            };
 
             log::info!("parsed a command request");
             Ok(Self::Cmd(header, command, urb_buf))
          }
-         _ => {
-            return Err(Error::new(
-               ErrorKind::InvalidInput,
-               Box::new(UsbIpError::InvalidCommand(header.command as u16)),
-            ));
-         }
+         _ => Err(Error::new(
+            ErrorKind::InvalidInput,
+            Box::new(UsbIpError::InvalidCommand(header.command as u16)),
+         )),
       }
    }
 }
@@ -154,7 +158,7 @@ pub enum UsbIpResponseCmd {
 }
 
 impl UsbIpResponse {
-   pub fn to_vec(self) -> Option<Vec<u8>> {
+   pub fn to_vec(&self) -> Option<Vec<u8>> {
       let mut result = vec![];
 
       // Parse the header
@@ -162,7 +166,7 @@ impl UsbIpResponse {
 
       // parse the command
       match self.cmd {
-         UsbIpResponseCmd::Cmd(cmd) => {
+         UsbIpResponseCmd::Cmd(ref cmd) => {
             result.extend_from_slice(&cmd.to_array());
          }
       }

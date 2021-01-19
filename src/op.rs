@@ -95,12 +95,10 @@ impl OpRequest {
             // TODO: Add bus_id to connect device
             Ok(Self::ConnectDevice(header))
          }
-         _ => {
-            return Err(Error::new(
-               ErrorKind::InvalidInput,
-               Box::new(UsbIpError::InvalidCommand(header.command)),
-            ));
-         }
+         _ => Err(Error::new(
+            ErrorKind::InvalidInput,
+            Box::new(UsbIpError::InvalidCommand(header.command)),
+         )),
       }
    }
 }
@@ -121,7 +119,7 @@ pub enum OpResponseCommand {
 }
 
 impl OpResponse {
-   pub fn to_vec(self) -> Option<Vec<u8>> {
+   pub fn to_vec(&self) -> Option<Vec<u8>> {
       let mut result = vec![];
 
       // Build and serialize the header
@@ -171,7 +169,7 @@ impl OpResponse {
       result.extend_from_slice(&self.descriptor.to_array());
 
       // If exists, serialize the interface descriptor
-      if let OpResponseCommand::ListDevices(interface) = self.cmd {
+      if let OpResponseCommand::ListDevices(ref interface) = self.cmd {
          result.extend_from_slice(&interface.to_array());
       }
 

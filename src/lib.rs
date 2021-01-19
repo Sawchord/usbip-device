@@ -38,8 +38,9 @@ impl std::error::Error for UsbIpError {}
 
 const NUM_ENDPOINTS: usize = 8;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct EndpointConf {
+    pub data: VecDeque<Vec<u8>>,
     pub ty: EndpointType,
     pub max_packet_size: u16,
     pub interval: u8,
@@ -49,13 +50,22 @@ pub(crate) struct EndpointConf {
 #[derive(Debug, Clone, Default)]
 pub struct Endpoint {
     pub(crate) in_ep: Option<EndpointConf>,
-    pub(crate) in_buf: VecDeque<Vec<u8>>,
     pub(crate) out_ep: Option<EndpointConf>,
-    pub(crate) out_buf: VecDeque<Vec<u8>>,
     pub(crate) seqnum: u32,
+    pub(crate) bytes_requested: Option<u32>,
     pub(crate) stalled: bool,
     pub(crate) setup_flag: bool,
     pub(crate) in_complete_flag: bool,
+}
+
+impl Endpoint {
+    fn get_in(&mut self) -> UsbResult<&mut EndpointConf> {
+        self.in_ep.as_mut().ok_or(UsbError::InvalidEndpoint)
+    }
+
+    fn get_out(&mut self) -> UsbResult<&mut EndpointConf> {
+        self.out_ep.as_mut().ok_or(UsbError::InvalidEndpoint)
+    }
 }
 
 #[derive(Debug)]
@@ -161,6 +171,7 @@ impl UsbBus for UsbIpBus {
 
         // initialize the endpoint
         let ep_conf = EndpointConf {
+            data: VecDeque::new(),
             ty: ep_type,
             max_packet_size,
             interval,
@@ -199,11 +210,9 @@ impl UsbBus for UsbIpBus {
         log::debug!("write request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
         let ep = inner.get_endpoint(ep_addr.index())?;
+        let conf = ep.get_in()?;
 
-        // FIXME: Only allow one packet?
-
-        // Check that the buffer fits the max packet lentgth?
-        ep.in_buf.push_back(buf.to_vec());
+        conf.data.push_back(buf.to_vec());
 
         Ok(buf.len())
     }
@@ -212,25 +221,16 @@ impl UsbBus for UsbIpBus {
         log::debug!("read request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
         let ep = inner.get_endpoint(ep_addr.index())?;
+        let conf = ep.get_out()?;
 
         // Try to get data
-        let data = match ep.out_buf.pop_front() {
+        let data = match conf.data.pop_front() {
             None => {
                 log::debug!("no data available at endpoint");
                 return Err(UsbError::WouldBlock);
             }
             Some(data) => data,
         };
-
-        // TODO: Check that the read buffer is large enough
-        //if data.len() > ep.out_ep.
-        // log::warn!(
-        //     "buffer of length {} too small for data of length {}",
-        //     buf.len(),
-        //     data.len()
-        // );
-        // ep.out_buf.push_front(data);
-        // Err(UsbError::BufferOverflow)
 
         if buf.len() < data.len() {
             buf.copy_from_slice(&data[..buf.len()]);
@@ -253,7 +253,7 @@ impl UsbBus for UsbIpBus {
             ep_addr,
             stalled
         );
-        endpoint.stalled = true;
+        endpoint.stalled = stalled;
     }
 
     fn is_stalled(&self, ep_addr: EndpointAddress) -> bool {
@@ -294,9 +294,9 @@ impl UsbBus for UsbIpBus {
         log::debug!("usb device is being polled");
 
         if !inner.reset {
-            inner.handle_in();
+            inner.send_pending();
         }
-        inner.handle_out();
+        inner.handle_socket();
 
         if inner.reset {
             log::debug!("device is in reset state");
@@ -318,8 +318,12 @@ impl UsbBus for UsbIpBus {
             ep_setup <<= 1;
 
             let ep = &mut inner.endpoint[i];
-            if !ep.out_buf.is_empty() {
-                ep_out |= 1;
+
+            // Check for pending output
+            if let Some(ref conf) = ep.out_ep {
+                if !conf.data.is_empty() {
+                    ep_out |= 1;
+                }
             }
 
             if ep.in_complete_flag {
