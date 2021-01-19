@@ -46,33 +46,36 @@ impl SocketHandler {
       loop {
          let reset = self.bus.lock().reset;
          let response = match reset {
-            // Handle Op list case
-            // NOTE: Next line blocks, do not hold lock
+            // Handle ops in not connected case
             true => match OpRequest::read(&mut stream) {
                Ok(op) => match handle_op(self.bus.lock(), op) {
-                  Some(response) => response,
+                  Some(response) => Ok(response),
                   None => break,
                },
-               Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
-               Err(err) if err.kind() == ErrorKind::NotConnected => break,
-               Err(err) => {
-                  log::warn!("error while receiving op: {}", err);
-                  break;
-               }
+               Err(err) => Err(err),
             },
 
             // Handle connected case
-            // NOTE: Next line blocks, do not hold lock
             false => match UsbIpRequest::read(&mut stream) {
-               Some(cmd) => match handle_cmd(self.bus.lock(), cmd) {
-                  Some(response) => response,
+               Ok(cmd) => match handle_cmd(self.bus.lock(), cmd) {
+                  Some(response) => Ok(response),
                   None => break,
                },
-               None => continue,
+               Err(err) => Err(err),
             },
          };
 
-         stream.write(&response[..]).unwrap();
+         match response {
+            Ok(response) => {
+               stream.write(&response[..]).unwrap();
+            }
+            Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+            Err(err) if err.kind() == ErrorKind::NotConnected => break,
+            Err(err) => {
+               log::warn!("error while receiving op: {}", err);
+               break;
+            }
+         }
       }
    }
 }

@@ -1,29 +1,9 @@
+use crate::UsbIpError;
 use std::{
    convert::TryInto,
    io::{Error, ErrorKind, Read},
    net::TcpStream,
 };
-
-#[derive(Debug, Clone)]
-pub enum OpError {
-   ConnectionClosed,
-   InvalidCommand(u16),
-   StatusNotOk(u32),
-   PkgTooShort(usize),
-}
-
-impl std::fmt::Display for OpError {
-   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-      match self {
-         Self::ConnectionClosed => write!(f, "connection no longer exsists"),
-         Self::InvalidCommand(cmd) => write!(f, "unknown command: {}", cmd),
-         Self::StatusNotOk(status) => write!(f, "received invalid status: {}", status),
-         Self::PkgTooShort(len) => write!(f, "packet of length {} is to short to parse", len),
-      }
-   }
-}
-
-impl std::error::Error for OpError {}
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -68,13 +48,13 @@ impl OpRequest {
          Ok(0) => {
             return Err(Error::new(
                ErrorKind::NotConnected,
-               Box::new(OpError::ConnectionClosed),
+               Box::new(UsbIpError::ConnectionClosed),
             ))
          }
          Ok(bytes_read) => {
             return Err(Error::new(
                ErrorKind::InvalidInput,
-               Box::new(OpError::PkgTooShort(bytes_read)),
+               Box::new(UsbIpError::PkgTooShort(bytes_read)),
             ))
          }
          Err(err) => return Err(err),
@@ -88,7 +68,7 @@ impl OpRequest {
       if header.status != 0 {
          return Err(Error::new(
             ErrorKind::InvalidInput,
-            Box::new(OpError::StatusNotOk(header.status)),
+            Box::new(UsbIpError::StatusNotOk(header.status)),
          ));
       }
 
@@ -118,7 +98,7 @@ impl OpRequest {
          _ => {
             return Err(Error::new(
                ErrorKind::InvalidInput,
-               Box::new(OpError::InvalidCommand(header.command)),
+               Box::new(UsbIpError::InvalidCommand(header.command)),
             ));
          }
       }

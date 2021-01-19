@@ -17,6 +17,27 @@ use usb_device::{
     },
 };
 
+#[derive(Debug, Clone)]
+pub enum UsbIpError {
+    ConnectionClosed,
+    PkgTooShort(usize),
+    InvalidCommand(u16),
+    StatusNotOk(u32),
+}
+
+impl std::fmt::Display for UsbIpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ConnectionClosed => write!(f, "connection no longer exsists"),
+            Self::PkgTooShort(len) => write!(f, "packet of length {} is to short to parse", len),
+            Self::InvalidCommand(cmd) => write!(f, "unknown command: {}", cmd),
+            Self::StatusNotOk(status) => write!(f, "received invalid status: {}", status),
+        }
+    }
+}
+
+impl std::error::Error for UsbIpError {}
+
 const NUM_ENDPOINTS: usize = 8;
 
 #[derive(Debug, Clone, Copy)]

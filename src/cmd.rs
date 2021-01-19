@@ -1,4 +1,9 @@
-use std::{convert::TryInto, io::Read};
+use crate::UsbIpError;
+use std::{
+   convert::TryInto,
+   io::{Error, ErrorKind, Read},
+   net::TcpStream,
+};
 
 // TODO: Unlink commands
 
@@ -35,23 +40,27 @@ pub enum UsbIpRequest {
 }
 
 impl UsbIpRequest {
-   pub fn read<R: Read>(reader: &mut R) -> Option<Self> {
+   pub fn read(reader: &mut TcpStream) -> Result<Self, Error> {
       // Read an parse header
+      reader.set_nonblocking(true)?;
       let mut header_buf = [0; 12];
       match reader.read(&mut header_buf) {
          Ok(bytes_read) if bytes_read == 12 => (),
+         Ok(0) => {
+            return Err(Error::new(
+               ErrorKind::NotConnected,
+               Box::new(UsbIpError::ConnectionClosed),
+            ))
+         }
          Ok(bytes_read) => {
-            log::warn!(
-               "received packet of length {} too short to be cmd header",
-               bytes_read
-            );
-            return None;
+            return Err(Error::new(
+               ErrorKind::InvalidInput,
+               Box::new(UsbIpError::PkgTooShort(bytes_read)),
+            ))
          }
-         _ => {
-            log::warn!("error while receiving cmd header");
-            return None;
-         }
+         Err(err) => return Err(err),
       }
+      reader.set_nonblocking(false)?;
 
       let header = UsbIpHeader::from_slice(&header_buf);
 
@@ -64,18 +73,7 @@ impl UsbIpRequest {
       match header.command {
          0x00000001 => {
             let mut data_buf = [0; 36];
-            match reader.read(&mut data_buf) {
-               Ok(bytes_read) if bytes_read == 36 => (),
-               Ok(bytes_read) => {
-                  log::warn!("cmd packet of length {} is too short", bytes_read);
-                  return None;
-               }
-               _ => {
-                  log::warn!("error while receiving cmd packet");
-                  return None;
-               }
-            }
-
+            reader.read_exact(&mut data_buf)?;
             let command = UsbIpCmd::from_slice(&data_buf);
 
             // Receive the URB
@@ -83,32 +81,17 @@ impl UsbIpRequest {
             let mut urb_buf = vec![0; expected_length as usize];
 
             if expected_length != 0 {
-               match reader.read(&mut urb_buf) {
-                  Ok(bytes_read) if bytes_read == expected_length as usize => (),
-                  Ok(bytes_read) => {
-                     log::warn!(
-                        "received {} bytes but expected {}",
-                        bytes_read,
-                        expected_length
-                     );
-                     return None;
-                  }
-                  _ => {
-                     log::warn!("error while receiving cmd packet");
-                     return None;
-                  }
-               }
+               reader.read_exact(&mut urb_buf)?;
             }
 
             log::info!("parsed a command request");
-            Some(Self::Cmd(header, command, urb_buf))
+            Ok(Self::Cmd(header, command, urb_buf))
          }
          _ => {
-            log::warn!(
-               "received packet with unsupported command {}",
-               header.command
-            );
-            return None;
+            return Err(Error::new(
+               ErrorKind::InvalidInput,
+               Box::new(UsbIpError::InvalidCommand(header.command as u16)),
+            ));
          }
       }
    }
