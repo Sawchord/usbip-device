@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub(crate) mod cmd;
 pub(crate) mod handler;
 pub(crate) mod op;
@@ -47,15 +45,17 @@ pub(crate) struct EndpointConf {
     pub interval: u8,
 }
 
+// TODO: Move bufs into endpoint conf
 #[derive(Debug, Clone, Default)]
 pub struct Endpoint {
     pub(crate) in_ep: Option<EndpointConf>,
+    pub(crate) in_buf: VecDeque<Vec<u8>>,
     pub(crate) out_ep: Option<EndpointConf>,
+    pub(crate) out_buf: VecDeque<Vec<u8>>,
+    pub(crate) seqnum: u32,
     pub(crate) stalled: bool,
     pub(crate) setup_flag: bool,
     pub(crate) in_complete_flag: bool,
-    pub(crate) in_buf: VecDeque<Vec<u8>>,
-    pub(crate) out_buf: VecDeque<Vec<u8>>,
 }
 
 #[derive(Debug)]

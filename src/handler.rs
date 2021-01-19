@@ -10,7 +10,6 @@ use std::{
 
 #[derive(Debug)]
 pub struct SocketHandler {
-   seqnum: u32,
    listener: TcpListener,
    connection: Option<TcpStream>,
 }
@@ -20,7 +19,6 @@ impl SocketHandler {
       let listener = TcpListener::bind(("127.0.0.1", 3240)).unwrap();
       listener.set_nonblocking(true).unwrap();
       Self {
-         seqnum: 0,
          listener,
          connection: None,
       }
@@ -80,11 +78,11 @@ impl UsbIpBusInner {
    pub fn handle_in(&mut self) {
       for (ep_idx, ep) in self.endpoint.iter_mut().enumerate() {
          for output in ep.in_buf.drain(..) {
-            self.handler.seqnum += 1;
+            ep.in_complete_flag = true;
             let response = UsbIpResponse {
                header: UsbIpHeader {
                   command: 0x0003,
-                  seqnum: self.handler.seqnum,
+                  seqnum: ep.seqnum,
                   devid: 2,
                },
                cmd: UsbIpResponseCmd::Cmd(UsbIpCmd {
@@ -209,11 +207,6 @@ impl UsbIpBusInner {
                data.len(),
             );
 
-            if header.seqnum < self.handler.seqnum {
-               log::warn!("received seqnum is too smal;");
-            }
-            self.handler.seqnum = header.seqnum;
-
             // Get the endpoint and push packets to input
             let ep = match self.get_endpoint(cmd.ep as usize) {
                Ok(ep) => ep,
@@ -222,6 +215,11 @@ impl UsbIpBusInner {
                   return;
                }
             };
+
+            if header.seqnum < ep.seqnum {
+               log::warn!("received seqnum is too small");
+            }
+            ep.seqnum = header.seqnum;
 
             // check wether we have a setup packet
             if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {

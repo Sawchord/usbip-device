@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       .manufacturer("Fake company")
       .product("Serial port")
       .serial_number("TEST")
+      .max_packet_size_0(64)
       .device_class(USB_CLASS_CDC)
       .build();
 
