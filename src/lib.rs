@@ -60,6 +60,7 @@ pub struct Endpoint {
 
 #[derive(Debug)]
 pub(crate) struct UsbIpBusInner {
+    pub handler: SocketHandler,
     pub endpoint: [Endpoint; NUM_ENDPOINTS],
     pub device_address: u8,
     pub reset: bool,
@@ -111,13 +112,13 @@ impl UsbIpBus {
     /// Create a new [`UsbIpBus`].
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let new_bus = Self(Arc::new(Mutex::new(UsbIpBusInner {
+            handler: SocketHandler::new(),
             endpoint: <[Endpoint; NUM_ENDPOINTS]>::default(),
             device_address: 0,
             reset: true,
             suspended: false,
         })));
 
-        SocketHandler::run(new_bus.clone());
         Ok(new_bus)
     }
 
@@ -183,6 +184,7 @@ impl UsbBus for UsbIpBus {
     }
 
     fn reset(&self) {
+        // TODO: Delete content of all endpoints and unstall them
         log::debug!("usb device is being reset");
     }
 
@@ -290,6 +292,11 @@ impl UsbBus for UsbIpBus {
     fn poll(&self) -> PollResult {
         let mut inner = self.lock();
         log::debug!("usb device is being polled");
+
+        if !inner.reset {
+            inner.handle_in();
+        }
+        inner.handle_out();
 
         if inner.reset {
             log::debug!("device is in reset state");
