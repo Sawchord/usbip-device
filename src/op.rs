@@ -1,4 +1,29 @@
-use std::{convert::TryInto, io::Read};
+use std::{
+   convert::TryInto,
+   io::{Error, ErrorKind, Read},
+   net::TcpStream,
+};
+
+#[derive(Debug, Clone)]
+pub enum OpError {
+   ConnectionClosed,
+   InvalidCommand(u16),
+   StatusNotOk(u32),
+   PkgTooShort(usize),
+}
+
+impl std::fmt::Display for OpError {
+   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      match self {
+         Self::ConnectionClosed => write!(f, "connection no longer exsists"),
+         Self::InvalidCommand(cmd) => write!(f, "unknown command: {}", cmd),
+         Self::StatusNotOk(status) => write!(f, "received invalid status: {}", status),
+         Self::PkgTooShort(len) => write!(f, "packet of length {} is to short to parse", len),
+      }
+   }
+}
+
+impl std::error::Error for OpError {}
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -34,29 +59,37 @@ pub enum OpRequest {
 }
 
 impl OpRequest {
-   pub fn read<R: Read>(reader: &mut R) -> Option<Self> {
+   pub fn read(reader: &mut TcpStream) -> Result<Self, Error> {
       // Receive the header
+      reader.set_nonblocking(true)?;
       let mut header_buf = [0; 8];
       match reader.read(&mut header_buf) {
          Ok(bytes_read) if bytes_read == 8 => (),
-         Ok(0) => return None,
+         Ok(0) => {
+            return Err(Error::new(
+               ErrorKind::NotConnected,
+               Box::new(OpError::ConnectionClosed),
+            ))
+         }
          Ok(bytes_read) => {
-            log::warn!("received too short packet of length {}", bytes_read);
-            return None;
+            return Err(Error::new(
+               ErrorKind::InvalidInput,
+               Box::new(OpError::PkgTooShort(bytes_read)),
+            ))
          }
-         _ => {
-            log::warn!("failed to reviece data from reader");
-            return None;
-         }
+         Err(err) => return Err(err),
       }
+      reader.set_nonblocking(false)?;
 
       // Parse the header
       let header = OpHeader::from_slice(&header_buf);
 
       // Check status
       if header.status != 0 {
-         log::warn!("received request with error status code {}", header.status);
-         return None;
+         return Err(Error::new(
+            ErrorKind::InvalidInput,
+            Box::new(OpError::StatusNotOk(header.status)),
+         ));
       }
 
       log::debug!("request version is {}", header.version);
@@ -65,38 +98,28 @@ impl OpRequest {
       match header.command {
          0x8005 => {
             log::info!("received request to list devices");
-            Some(Self::ListDevices(header))
+            Ok(Self::ListDevices(header))
          }
          0x8003 => {
-            let bus_id = OpRequest::read_bus_id(reader)?;
+            let mut bus_id_buf = [0; 32];
+            reader.read_exact(&mut bus_id_buf)?;
+
+            let bus_id = match std::str::from_utf8(&bus_id_buf) {
+               Ok(data) => data.trim_matches(char::from(0)).to_string(),
+               Err(err) => {
+                  return Err(Error::new(ErrorKind::InvalidInput, err));
+               }
+            };
+
             log::info!("received request to connect device {}", bus_id);
             // TODO: Add bus_id to connect device
-            Some(Self::ConnectDevice(header))
+            Ok(Self::ConnectDevice(header))
          }
          _ => {
-            log::warn!("received request with unknown command {}", header.command);
-            None
-         }
-      }
-   }
-
-   fn read_bus_id<R: Read>(reader: &mut R) -> Option<String> {
-      let mut buf = [0; 32];
-      match reader.read(&mut buf) {
-         Ok(bytes_read) if bytes_read == 32 => match std::str::from_utf8(&buf) {
-            Ok(data) => Some(data.trim_matches(char::from(0)).to_string()),
-            _ => {
-               log::warn!("failed to read usb-bus id");
-               None
-            }
-         },
-         Ok(bytes_read) => {
-            log::warn!("received too short packet of length {}", bytes_read);
-            None
-         }
-         _ => {
-            log::warn!("failed to reviece data from reader");
-            None
+            return Err(Error::new(
+               ErrorKind::InvalidInput,
+               Box::new(OpError::InvalidCommand(header.command)),
+            ));
          }
       }
    }

@@ -4,7 +4,7 @@ use crate::{
    {UsbIpBus, UsbIpBusInner},
 };
 use std::{
-   io::Write,
+   io::{ErrorKind, Write},
    net::{TcpListener, TcpStream},
    sync::MutexGuard,
 };
@@ -49,11 +49,16 @@ impl SocketHandler {
             // Handle Op list case
             // NOTE: Next line blocks, do not hold lock
             true => match OpRequest::read(&mut stream) {
-               Some(op) => match handle_op(self.bus.lock(), op) {
+               Ok(op) => match handle_op(self.bus.lock(), op) {
                   Some(response) => response,
                   None => break,
                },
-               None => break,
+               Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+               Err(err) if err.kind() == ErrorKind::NotConnected => break,
+               Err(err) => {
+                  log::warn!("error while receiving op: {}", err);
+                  break;
+               }
             },
 
             // Handle connected case
