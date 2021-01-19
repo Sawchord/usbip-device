@@ -214,6 +214,8 @@ impl UsbBus for UsbIpBus {
 
         conf.data.push_back(buf.to_vec());
 
+        // TODO: Set ready to send and send pending here
+
         Ok(buf.len())
     }
 
@@ -291,7 +293,7 @@ impl UsbBus for UsbIpBus {
 
     fn poll(&self) -> PollResult {
         let mut inner = self.lock();
-        log::debug!("usb device is being polled");
+        log::trace!("usb device is being polled");
 
         if !inner.reset {
             inner.send_pending();

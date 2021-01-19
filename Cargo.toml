@@ -7,8 +7,9 @@ edition = "2018"
 [dependencies]
 usb-device = { version = "0.2.7", default-features = false }
 log = { version = "0.4.13", default-features = false }
-bitfields = { version = "0.2.0", default-features = false }
+bitfield = { version = "0.13.2", default-features = false }
 
 [dev-dependencies]
 pretty_env_logger = { version = "0.4.0", default-features = false }
 usbd-serial = { version = "0.1.1", default-features = false }
+usbd-hid = { version = "0.4.5", default-features = false }

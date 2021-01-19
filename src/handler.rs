@@ -26,7 +26,6 @@ impl SocketHandler {
 }
 
 impl UsbIpBusInner {
-   // TODO: Return UsbError in result
    pub fn handle_socket(&mut self) {
       match self.handler.connection {
          // If not connected, listen for new connections
@@ -225,6 +224,7 @@ impl UsbIpBusInner {
                cmd.ep,
                header.seqnum,
             );
+            log::info!("header: {:?}, cmd: {:?}, data: {:?}", header, cmd, data);
 
             // Get the endpoint
             let ep = match self.get_endpoint(cmd.ep as usize) {
