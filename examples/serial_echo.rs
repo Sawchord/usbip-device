@@ -13,20 +13,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       .manufacturer("Fake company")
       .product("Serial port")
       .serial_number("TEST")
-      .max_packet_size_0(64)
       .device_class(USB_CLASS_CDC)
       .build();
 
    loop {
-      std::thread::sleep(std::time::Duration::from_millis(5));
-      usb_bus.poll(&mut [&mut usb_serial]);
+      if !usb_bus.poll(&mut [&mut usb_serial]) {
+         std::thread::sleep(std::time::Duration::from_millis(5));
+      }
 
       let mut buf = [0; 64];
       if let Ok(count) = usb_serial.read(&mut buf) {
          let text = String::from_utf8_lossy(&buf);
          log::info!("read {} bytes: {}", count, text);
 
-         // TODO: To uppercase
+         // Possible improvement: Make all packets to uppercase
 
          // Send back, poll usb until we are ready
          loop {

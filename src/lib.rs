@@ -46,7 +46,17 @@ pub(crate) struct EndpointConf {
     pub interval: u8,
 }
 
-// TODO: Move bufs into endpoint conf
+impl EndpointConf {
+    /// Checks, wether the endpoint contains a full transaction
+    /// (terminated by a short packet) and is reay to send it.
+    pub fn is_rts(&self) -> bool {
+        match self.data.back() {
+            None => false,
+            Some(val) => val.len() < self.max_packet_size as usize,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Endpoint {
     pub(crate) in_ep: Option<EndpointConf>,
@@ -210,11 +220,16 @@ impl UsbBus for UsbIpBus {
         log::debug!("write request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
         let ep = inner.get_endpoint(ep_addr.index())?;
-        let conf = ep.get_in()?;
+        // The transfer completes immediately, since there is no real transfer
+        ep.in_complete_flag = true;
 
+        let conf = ep.get_in()?;
         conf.data.push_back(buf.to_vec());
 
-        // TODO: Set ready to send and send pending here
+        // we attempt to service in packets, if we have them available
+        if conf.is_rts() {
+            inner.send_pending();
+        }
 
         Ok(buf.len())
     }

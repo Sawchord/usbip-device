@@ -47,7 +47,6 @@ pub enum UsbIpRequest {
 
 impl UsbIpRequest {
    pub fn read(reader: &mut TcpStream) -> Result<Self, Error> {
-      // TODO: Do it in a single read
       // Read an parse header
       reader.set_nonblocking(true)?;
       let mut buf = [0; 48];
@@ -92,7 +91,6 @@ impl UsbIpRequest {
                vec![]
             };
 
-            log::info!("parsed a command request");
             Ok(Self::Cmd(header, command, urb_buf))
          }
          _ => Err(Error::new(
@@ -105,7 +103,6 @@ impl UsbIpRequest {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
-// TODO: Turn into UsbIpCmdRequest and add UsbIpCmdResponse
 pub struct UsbIpCmd {
    pub transfer_flags: u32,
    pub transfer_buffer_length: u32,
@@ -143,12 +140,14 @@ impl UsbIpCmd {
 
 // TODO: Implement transfer flags
 
+#[derive(Debug, Clone)]
 pub struct UsbIpResponse {
    pub header: UsbIpHeader,
    pub cmd: UsbIpResponseCmd,
    pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone)]
 pub enum UsbIpResponseCmd {
    Cmd(UsbIpCmd),
 }

@@ -16,16 +16,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       .manufacturer("Fake company")
       .product("Twitchy Mousey")
       .serial_number("TEST")
-      .max_packet_size_0(64)
       .device_class(0xEF)
       .build();
 
    let mut cnt = 0;
 
    loop {
-      cnt += 5;
-      std::thread::sleep(std::time::Duration::from_millis(5));
-      usb_bus.poll(&mut [&mut usb_hid]);
+      if !usb_bus.poll(&mut [&mut usb_hid]) {
+         cnt += 5;
+         std::thread::sleep(std::time::Duration::from_millis(5));
+      }
 
       if cnt == 1000 {
          usb_hid

@@ -7,6 +7,7 @@ use std::{
    io::{ErrorKind, Write},
    net::{TcpListener, TcpStream},
 };
+use usb_device::UsbError;
 
 #[derive(Debug)]
 pub struct SocketHandler {
@@ -80,8 +81,14 @@ impl UsbIpBusInner {
          match ep.bytes_requested {
             None => (),
             Some(bytes_requested) => {
-               let conf = ep.get_in().unwrap();
-               if conf.data.is_empty() {
+               let conf = match ep.get_in() {
+                  Ok(conf) => conf,
+                  Err(UsbError::InvalidEndpoint) => continue,
+                  Err(e) => panic!("unexpected error {:?} while processing in packet", e),
+               };
+
+               // do not send, if not ready to send yet
+               if !conf.is_rts() {
                   continue;
                }
 
@@ -98,7 +105,6 @@ impl UsbIpBusInner {
                   }
                }
 
-               ep.in_complete_flag = true;
                let response = UsbIpResponse {
                   header: UsbIpHeader {
                      command: 0x0003,
@@ -118,6 +124,13 @@ impl UsbIpBusInner {
                   }),
                   data: out_buf,
                };
+               log::info!(
+                  "header: {:?}, cmd: {:?}. data: {:?}",
+                  response.header,
+                  response.cmd,
+                  response.data
+               );
+
                self
                   .handler
                   .connection
@@ -218,12 +231,6 @@ impl UsbIpBusInner {
    fn handle_cmd(&mut self, cmd: UsbIpRequest) {
       match cmd {
          UsbIpRequest::Cmd(header, cmd, data) => {
-            log::info!(
-               "received cmd for dev {} endpoint {}, seqnum {}",
-               header.devid,
-               header.ep,
-               header.seqnum,
-            );
             log::info!("header: {:?}, cmd: {:?}, data: {:?}", header, cmd, data);
 
             // Get the endpoint
@@ -257,7 +264,7 @@ impl UsbIpBusInner {
             }
 
             // If this is an in packet, we set the bytes requested flag
-            // Also, we try to service the in data asap
+            // also, we try to send pending data, if available
             if header.direction == 1 {
                ep.bytes_requested = Some(cmd.transfer_buffer_length);
                self.send_pending();
