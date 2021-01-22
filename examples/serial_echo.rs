@@ -17,9 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       .build();
 
    loop {
-      if !usb_bus.poll(&mut [&mut usb_serial]) {
-         std::thread::sleep(std::time::Duration::from_millis(5));
-      }
+      usb_bus.poll(&mut [&mut usb_serial]);
+      std::thread::sleep(std::time::Duration::from_millis(5));
 
       let mut buf = [0; 64];
       if let Ok(count) = usb_serial.read(&mut buf) {
@@ -31,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
          // Send back, poll usb until we are ready
          loop {
             usb_bus.poll(&mut [&mut usb_serial]);
-            if let Ok(count) = usb_serial.write(&buf) {
+            if let Ok(count) = usb_serial.write(&buf[0..count]) {
                log::info!("sent back {} bytes", count);
                break;
             }

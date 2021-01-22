@@ -15,6 +15,8 @@ pub struct SocketHandler {
    connection: Option<TcpStream>,
 }
 
+const DEVICE_SPEED: u32 = 1;
+
 impl SocketHandler {
    pub fn new() -> Self {
       let listener = TcpListener::bind(("127.0.0.1", 3240)).unwrap();
@@ -100,9 +102,7 @@ impl UsbIpBusInner {
                      break;
                   }
 
-                  if out_buf.len() >= bytes_requested as usize {
-                     panic!("left some bytes unread");
-                  }
+                  // TODO: Error if exact read was requested
                }
 
                let response = UsbIpResponse {
@@ -155,7 +155,7 @@ impl UsbIpBusInner {
                descriptor: OpDeviceDescriptor {
                   busnum: 1,
                   devnum: 2,
-                  speed: 2,
+                  speed: DEVICE_SPEED,
 
                   // These values should be settable via configuration
                   vendor: 0x1111,
@@ -195,7 +195,7 @@ impl UsbIpBusInner {
                descriptor: OpDeviceDescriptor {
                   busnum: 1,
                   devnum: 2,
-                  speed: 2,
+                  speed: DEVICE_SPEED,
 
                   // These values should be settable via configuration
                   vendor: 0x1111,
@@ -261,6 +261,8 @@ impl UsbIpBusInner {
                for chunk in data.chunks(ep_out.max_packet_size as usize) {
                   ep_out.data.push_back(chunk.to_vec());
                }
+
+               // TODO: Add empty packet if it was requested
             }
 
             // If this is an in packet, we set the bytes requested flag
