@@ -94,16 +94,23 @@ impl UsbIpBusInner {
                   continue;
                }
 
+               // Read data from the packet buffer into the output buffer
+               // We must be careful to not send more bytes than requested
                let mut out_buf = vec![];
                while let Some(data) = conf.data.pop_front() {
-                  out_buf.extend_from_slice(&data);
+                  let bytes_left = bytes_requested as usize - out_buf.len();
+                  let bytes_to_read = usize::min(data.len(), bytes_left);
 
-                  if out_buf.len() == bytes_requested as usize {
+                  out_buf.extend_from_slice(&data[..bytes_to_read]);
+
+                  if bytes_to_read != data.len() {
+                     assert_eq!(out_buf.len(), bytes_requested as usize);
+                     conf.data.push_front(data[bytes_to_read..].to_vec());
                      break;
                   }
-
-                  // TODO: Error if exact read was requested
                }
+
+               // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
 
                let response = UsbIpResponse {
                   header: UsbIpHeader {
@@ -241,7 +248,7 @@ impl UsbIpBusInner {
                   return;
                }
             };
-            if header.seqnum < ep.seqnum {
+            if header.seqnum <= ep.seqnum {
                log::warn!("received seqnum is too small");
             }
             ep.seqnum = header.seqnum;

@@ -10,9 +10,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
    let bus_allocator = UsbBusAllocator::new(UsbIpBus::new()?);
    let mut usb_serial = SerialPort::new(&bus_allocator);
    let mut usb_bus = UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x27dd))
-      .manufacturer("Fake company")
-      .product("Serial port")
-      .serial_number("TEST")
+      //.manufacturer("Fake company")
+      //.product("Serial port")
+      //.serial_number("TEST")
       .device_class(USB_CLASS_CDC)
       .build();
 
