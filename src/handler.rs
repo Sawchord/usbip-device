@@ -104,11 +104,11 @@ impl UsbIpBusInner {
                      command: 0x0003,
                      seqnum: ep.seqnum,
                      devid: 2,
+                     direction: 0,
+                     ep: ep_idx as u32,
                   },
                   cmd: UsbIpResponseCmd::Cmd(UsbIpCmd {
                      // TODO: Check these settings
-                     direction: 0,
-                     ep: ep_idx as u32,
                      transfer_flags: 0,
                      transfer_buffer_length: out_buf.len() as u32,
                      start_frame: 0,
@@ -221,13 +221,13 @@ impl UsbIpBusInner {
             log::info!(
                "received cmd for dev {} endpoint {}, seqnum {}",
                header.devid,
-               cmd.ep,
+               header.ep,
                header.seqnum,
             );
             log::info!("header: {:?}, cmd: {:?}, data: {:?}", header, cmd, data);
 
             // Get the endpoint
-            let ep = match self.get_endpoint(cmd.ep as usize) {
+            let ep = match self.get_endpoint(header.ep as usize) {
                Ok(ep) => ep,
                Err(err) => {
                   log::warn!("reveiced message for unimplemented endpoint {:?}", err);
@@ -247,7 +247,7 @@ impl UsbIpBusInner {
             }
 
             // If this is an output packet, output
-            if cmd.direction == 0 {
+            if header.direction == 0 {
                let ep_out = ep.get_out().unwrap();
 
                // pass the data into the correct buffers
@@ -258,7 +258,7 @@ impl UsbIpBusInner {
 
             // If this is an in packet, we set the bytes requested flag
             // Also, we try to service the in data asap
-            if cmd.direction == 1 {
+            if header.direction == 1 {
                ep.bytes_requested = Some(cmd.transfer_buffer_length);
                self.send_pending();
             }
