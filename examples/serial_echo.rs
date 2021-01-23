@@ -29,11 +29,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
          // Send back, poll usb until we are ready
          loop {
-            usb_bus.poll(&mut [&mut usb_serial]);
             if let Ok(count) = usb_serial.write(&buf[0..count]) {
                log::info!("sent back {} bytes", count);
                break;
             }
+            usb_bus.poll(&mut [&mut usb_serial]);
          }
       }
    }

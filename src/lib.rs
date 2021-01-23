@@ -310,9 +310,6 @@ impl UsbBus for UsbIpBus {
         let mut inner = self.lock();
         log::trace!("usb device is being polled");
 
-        if !inner.reset {
-            inner.send_pending();
-        }
         inner.handle_socket();
 
         if inner.reset {

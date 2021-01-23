@@ -92,7 +92,6 @@ impl OpRequest {
             };
 
             log::info!("received request to connect device {}", bus_id);
-            // TODO: Add bus_id to connect device
             Ok(Self::ConnectDevice(header))
          }
          _ => Err(Error::new(
