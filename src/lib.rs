@@ -228,7 +228,7 @@ impl UsbBus for UsbIpBus {
 
         // we attempt to service in packets, if we have them available
         if pipe.is_rts() {
-            inner.send_pending();
+            inner.try_send_pending(ep_addr.index());
         }
 
         Ok(buf.len())
