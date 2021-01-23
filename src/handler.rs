@@ -1,5 +1,5 @@
 use crate::{
-   cmd::{UsbIpCmd, UsbIpHeader, UsbIpRequest, UsbIpResponse, UsbIpResponseCmd},
+   cmd::{UsbIpHeader, UsbIpRequest, UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit},
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
    UsbIpBusInner,
 };
@@ -120,14 +120,13 @@ impl UsbIpBusInner {
                      direction: 0,
                      ep: ep_idx as u32,
                   },
-                  cmd: UsbIpResponseCmd::Cmd(UsbIpCmd {
+                  cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
                      // TODO: Check these settings
-                     transfer_flags: 0,
-                     transfer_buffer_length: out_buf.len() as u32,
+                     status: 0,
+                     actual_length: out_buf.len() as i32,
                      start_frame: 0,
                      number_of_packets: 0,
-                     interval_or_err_count: 0,
-                     setup: [0, 0, 0, 0, 0, 0, 0, 0],
+                     error_count: 0,
                   }),
                   data: out_buf,
                };

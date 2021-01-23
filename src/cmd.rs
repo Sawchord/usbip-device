@@ -42,7 +42,7 @@ impl UsbIpHeader {
 }
 
 pub enum UsbIpRequest {
-   Cmd(UsbIpHeader, UsbIpCmd, Vec<u8>),
+   Cmd(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>),
 }
 
 impl UsbIpRequest {
@@ -78,7 +78,7 @@ impl UsbIpRequest {
 
       match header.command {
          0x00000001 => {
-            let command = UsbIpCmd::from_slice(&buf[20..48]);
+            let command = UsbIpCmdSubmit::from_slice(&buf[20..48]);
 
             // Receive the URB if this is a OUT packet
             let urb_buf = if header.direction == 0 && command.transfer_buffer_length != 0 {
@@ -103,36 +103,23 @@ impl UsbIpRequest {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct UsbIpCmd {
+pub struct UsbIpCmdSubmit {
    pub transfer_flags: u32,
-   pub transfer_buffer_length: u32,
-   pub start_frame: u32,
-   pub number_of_packets: u32,
-   pub interval_or_err_count: u32,
+   pub transfer_buffer_length: i32,
+   pub start_frame: i32,
+   pub number_of_packets: i32,
+   pub interval: i32,
    pub setup: [u8; 8],
 }
 
-impl UsbIpCmd {
-   fn to_array(&self) -> [u8; 28] {
-      let mut result = [0; 28];
-
-      result[0..4].copy_from_slice(&self.transfer_flags.to_be_bytes());
-      result[4..8].copy_from_slice(&self.transfer_buffer_length.to_be_bytes());
-      result[8..12].copy_from_slice(&self.start_frame.to_be_bytes());
-      result[12..16].copy_from_slice(&self.number_of_packets.to_be_bytes());
-      result[16..20].copy_from_slice(&self.interval_or_err_count.to_be_bytes());
-      result[20..28].copy_from_slice(&self.setup);
-
-      result
-   }
-
+impl UsbIpCmdSubmit {
    fn from_slice(data: &[u8]) -> Self {
       Self {
          transfer_flags: u32::from_be_bytes(data[0..4].try_into().unwrap()),
-         transfer_buffer_length: u32::from_be_bytes(data[4..8].try_into().unwrap()),
-         start_frame: u32::from_be_bytes(data[8..12].try_into().unwrap()),
-         number_of_packets: u32::from_be_bytes(data[12..16].try_into().unwrap()),
-         interval_or_err_count: u32::from_be_bytes(data[16..20].try_into().unwrap()),
+         transfer_buffer_length: i32::from_be_bytes(data[4..8].try_into().unwrap()),
+         start_frame: i32::from_be_bytes(data[8..12].try_into().unwrap()),
+         number_of_packets: i32::from_be_bytes(data[12..16].try_into().unwrap()),
+         interval: i32::from_be_bytes(data[16..20].try_into().unwrap()),
          setup: data[20..28].try_into().unwrap(),
       }
    }
@@ -149,7 +136,7 @@ pub struct UsbIpResponse {
 
 #[derive(Debug, Clone)]
 pub enum UsbIpResponseCmd {
-   Cmd(UsbIpCmd),
+   Cmd(UsbIpRetSubmit),
 }
 
 impl UsbIpResponse {
@@ -170,5 +157,29 @@ impl UsbIpResponse {
       result.extend_from_slice(&self.data[..]);
 
       Some(result)
+   }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct UsbIpRetSubmit {
+   pub status: i32,
+   pub actual_length: i32,
+   pub start_frame: i32,
+   pub number_of_packets: i32,
+   pub error_count: i32,
+}
+
+impl UsbIpRetSubmit {
+   fn to_array(&self) -> [u8; 28] {
+      let mut result = [0; 28];
+
+      result[0..4].copy_from_slice(&self.status.to_be_bytes());
+      result[4..8].copy_from_slice(&self.actual_length.to_be_bytes());
+      result[8..12].copy_from_slice(&self.start_frame.to_be_bytes());
+      result[12..16].copy_from_slice(&self.number_of_packets.to_be_bytes());
+      result[16..20].copy_from_slice(&self.error_count.to_be_bytes());
+
+      result
    }
 }

@@ -62,7 +62,7 @@ pub struct Endpoint {
     pub(crate) pipe_in: Option<Pipe>,
     pub(crate) pipe_out: Option<Pipe>,
     pub(crate) seqnum: u32,
-    pub(crate) bytes_requested: Option<u32>,
+    pub(crate) bytes_requested: Option<i32>,
     pub(crate) stalled: bool,
     pub(crate) setup_flag: bool,
     pub(crate) in_complete_flag: bool,
