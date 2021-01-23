@@ -78,73 +78,79 @@ impl UsbIpBusInner {
       }
    }
 
-   pub fn send_pending(&mut self) {
-      for (ep_idx, ep) in self.endpoint.iter_mut().enumerate() {
-         match ep.bytes_requested {
-            None => (),
-            Some(bytes_requested) => {
-               let conf = match ep.get_in() {
-                  Ok(conf) => conf,
-                  Err(UsbError::InvalidEndpoint) => continue,
-                  Err(e) => panic!("unexpected error {:?} while processing in packet", e),
-               };
+   pub fn try_send_pending(&mut self, ep_addr: usize) {
+      let ep = match self.get_endpoint(ep_addr) {
+         Ok(ep) => ep,
+         Err(_) => {
+            log::warn!("request to send on uninitalized endpoint");
+            return;
+         }
+      };
 
-               // do not send, if not ready to send yet
-               if !conf.is_rts() {
-                  continue;
-               }
+      match ep.bytes_requested {
+         None => (),
+         Some(bytes_requested) => {
+            let conf = match ep.get_in() {
+               Ok(conf) => conf,
+               Err(UsbError::InvalidEndpoint) => return,
+               Err(e) => panic!("unexpected error {:?} while processing in packet", e),
+            };
 
-               // Read data from the packet buffer into the output buffer
-               // We must be careful to not send more bytes than requested
-               let mut out_buf = vec![];
-               while let Some(data) = conf.data.pop_front() {
-                  let bytes_left = bytes_requested as usize - out_buf.len();
-                  let bytes_to_read = usize::min(data.len(), bytes_left);
-
-                  out_buf.extend_from_slice(&data[..bytes_to_read]);
-
-                  if bytes_to_read != data.len() {
-                     assert_eq!(out_buf.len(), bytes_requested as usize);
-                     conf.data.push_front(data[bytes_to_read..].to_vec());
-                     break;
-                  }
-               }
-
-               // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
-
-               let response = UsbIpResponse {
-                  header: UsbIpHeader {
-                     command: 0x0003,
-                     seqnum: ep.seqnum,
-                     devid: 2,
-                     direction: 0,
-                     ep: ep_idx as u32,
-                  },
-                  cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
-                     // TODO: Check these settings
-                     status: 0,
-                     actual_length: out_buf.len() as i32,
-                     start_frame: 0,
-                     number_of_packets: 0,
-                     error_count: 0,
-                  }),
-                  data: out_buf,
-               };
-               log::info!(
-                  "header: {:?}, cmd: {:?}. data: {:?}",
-                  response.header,
-                  response.cmd,
-                  response.data
-               );
-
-               self
-                  .handler
-                  .connection
-                  .as_mut()
-                  .unwrap()
-                  .write_all(&response.to_vec().unwrap())
-                  .unwrap();
+            // do not send, if not ready to send yet
+            if !conf.is_rts() {
+               return;
             }
+
+            // Read data from the packet buffer into the output buffer
+            // We must be careful to not send more bytes than requested
+            let mut out_buf = vec![];
+            while let Some(data) = conf.data.pop_front() {
+               let bytes_left = bytes_requested as usize - out_buf.len();
+               let bytes_to_read = usize::min(data.len(), bytes_left);
+
+               out_buf.extend_from_slice(&data[..bytes_to_read]);
+
+               if bytes_to_read != data.len() {
+                  assert_eq!(out_buf.len(), bytes_requested as usize);
+                  conf.data.push_front(data[bytes_to_read..].to_vec());
+                  break;
+               }
+            }
+
+            // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
+
+            let response = UsbIpResponse {
+               header: UsbIpHeader {
+                  command: 0x0003,
+                  seqnum: ep.seqnum,
+                  devid: 2,
+                  direction: 0,
+                  ep: ep_addr as u32,
+               },
+               cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
+                  // TODO: Check these settings
+                  status: 0,
+                  actual_length: out_buf.len() as i32,
+                  start_frame: 0,
+                  number_of_packets: 0,
+                  error_count: 0,
+               }),
+               data: out_buf,
+            };
+            log::info!(
+               "header: {:?}, cmd: {:?}. data: {:?}",
+               response.header,
+               response.cmd,
+               response.data
+            );
+
+            self
+               .handler
+               .connection
+               .as_mut()
+               .unwrap()
+               .write_all(&response.to_vec().unwrap())
+               .unwrap();
          }
       }
    }
@@ -259,23 +265,21 @@ impl UsbIpBusInner {
                ep.setup_flag = true;
             }
 
-            // If this is an output packet, output
-            if header.direction == 0 {
-               let ep_out = ep.get_out().unwrap();
+            match header.direction {
+               0 => {
+                  let ep_out = ep.get_out().unwrap();
 
-               // pass the data into the correct buffers
-               for chunk in data.chunks(ep_out.max_packet_size as usize) {
-                  ep_out.data.push_back(chunk.to_vec());
+                  // pass the data into the correct buffers
+                  for chunk in data.chunks(ep_out.max_packet_size as usize) {
+                     ep_out.data.push_back(chunk.to_vec());
+                  }
+                  // TODO: Add empty packet if it was requested},
                }
-
-               // TODO: Add empty packet if it was requested
-            }
-
-            // If this is an in packet, we set the bytes requested flag
-            // also, we try to send pending data, if available
-            if header.direction == 1 {
-               ep.bytes_requested = Some(cmd.transfer_buffer_length);
-               self.send_pending();
+               1 => {
+                  ep.bytes_requested = Some(cmd.transfer_buffer_length);
+                  self.try_send_pending(header.ep as usize);
+               }
+               _ => panic!(),
             }
          }
       }
