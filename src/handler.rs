@@ -87,72 +87,72 @@ impl UsbIpBusInner {
          }
       };
 
-      match ep.bytes_requested {
-         None => (),
-         Some(bytes_requested) => {
-            let conf = match ep.get_in() {
-               Ok(conf) => conf,
-               Err(UsbError::InvalidEndpoint) => return,
-               Err(e) => panic!("unexpected error {:?} while processing in packet", e),
-            };
+      let bytes_requested = match ep.bytes_requested {
+         None => return,
+         Some(bytes_requested) => bytes_requested,
+      };
 
-            // do not send, if not ready to send yet
-            if !conf.is_rts() {
-               return;
-            }
+      let conf = match ep.get_in() {
+         Ok(conf) => conf,
+         Err(UsbError::InvalidEndpoint) => return,
+         Err(e) => panic!("unexpected error {:?} while processing in packet", e),
+      };
 
-            // Read data from the packet buffer into the output buffer
-            // We must be careful to not send more bytes than requested
-            let mut out_buf = vec![];
-            while let Some(data) = conf.data.pop_front() {
-               let bytes_left = bytes_requested as usize - out_buf.len();
-               let bytes_to_read = usize::min(data.len(), bytes_left);
+      // do not send, if not ready to send yet
+      if !conf.is_rts() {
+         return;
+      }
 
-               out_buf.extend_from_slice(&data[..bytes_to_read]);
+      // Read data from the packet buffer into the output buffer
+      // We must be careful to not send more bytes than requested
+      let mut out_buf = vec![];
+      while let Some(data) = conf.data.pop_front() {
+         let bytes_left = bytes_requested as usize - out_buf.len();
+         let bytes_to_read = usize::min(data.len(), bytes_left);
 
-               if bytes_to_read != data.len() {
-                  assert_eq!(out_buf.len(), bytes_requested as usize);
-                  conf.data.push_front(data[bytes_to_read..].to_vec());
-                  break;
-               }
-            }
+         out_buf.extend_from_slice(&data[..bytes_to_read]);
 
-            // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
-
-            let response = UsbIpResponse {
-               header: UsbIpHeader {
-                  command: 0x0003,
-                  seqnum: ep.seqnum,
-                  devid: 2,
-                  direction: 0,
-                  ep: ep_addr as u32,
-               },
-               cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
-                  // TODO: Check these settings
-                  status: 0,
-                  actual_length: out_buf.len() as i32,
-                  start_frame: 0,
-                  number_of_packets: 0,
-                  error_count: 0,
-               }),
-               data: out_buf,
-            };
-            log::info!(
-               "header: {:?}, cmd: {:?}. data: {:?}",
-               response.header,
-               response.cmd,
-               response.data
-            );
-
-            self
-               .handler
-               .connection
-               .as_mut()
-               .unwrap()
-               .write_all(&response.to_vec().unwrap())
-               .unwrap();
+         if bytes_to_read != data.len() {
+            assert_eq!(out_buf.len(), bytes_requested as usize);
+            conf.data.push_front(data[bytes_to_read..].to_vec());
+            break;
          }
       }
+
+      // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
+
+      let response = UsbIpResponse {
+         header: UsbIpHeader {
+            command: 0x0003,
+            seqnum: ep.seqnum,
+            devid: 2,
+            direction: 0,
+            ep: ep_addr as u32,
+         },
+         cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
+            // TODO: Check these settings
+            status: 0,
+            actual_length: out_buf.len() as i32,
+            start_frame: 0,
+            number_of_packets: 0,
+            error_count: 0,
+         }),
+         data: out_buf,
+      };
+      log::info!(
+         "header: {:?}, cmd: {:?}. data: {:?}",
+         response.header,
+         response.cmd,
+         response.data
+      );
+
+      self
+         .handler
+         .connection
+         .as_mut()
+         .unwrap()
+         .write_all(&response.to_vec().unwrap())
+         .unwrap();
    }
 
    /// Handles an incomming op packet, sends out the corresponding response
