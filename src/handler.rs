@@ -87,21 +87,21 @@ impl UsbIpBusInner {
          }
       };
 
-      let bytes_requested = match ep.bytes_requested {
+      if !ep.is_rts() {
+         return;
+      }
+
+      let (header, cmd, _data) = match ep.pending_ins.pop_front() {
+         Some(urb) => urb,
          None => return,
-         Some(bytes_requested) => bytes_requested,
       };
+      let bytes_requested = cmd.transfer_buffer_length;
 
       let conf = match ep.get_in() {
          Ok(conf) => conf,
          Err(UsbError::InvalidEndpoint) => return,
          Err(e) => panic!("unexpected error {:?} while processing in packet", e),
       };
-
-      // do not send, if not ready to send yet
-      if !conf.is_rts() {
-         return;
-      }
 
       // Read data from the packet buffer into the output buffer
       // We must be careful to not send more bytes than requested
@@ -124,9 +124,9 @@ impl UsbIpBusInner {
       let response = UsbIpResponse {
          header: UsbIpHeader {
             command: 0x0003,
-            seqnum: ep.seqnum,
+            seqnum: header.seqnum,
             devid: 2,
-            direction: 0,
+            direction: 1,
             ep: ep_addr as u32,
          },
          cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
@@ -156,7 +156,6 @@ impl UsbIpBusInner {
    }
 
    /// Handles an incomming op packet, sends out the corresponding response
-   // FIXME: Clean up this function
    fn handle_op(&mut self, op: OpRequest) {
       match op {
          OpRequest::ListDevices(header) => {
@@ -253,16 +252,18 @@ impl UsbIpBusInner {
                   return;
                }
             };
-            if header.seqnum <= ep.seqnum {
-               log::warn!("received seqnum is too small");
-            }
-            ep.seqnum = header.seqnum;
 
             // check wether we have a setup packet
             if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
                log::info!("setup was requested");
                ep.get_out().unwrap().data.push_back(cmd.setup.to_vec());
                ep.setup_flag = true;
+
+               // Push this in packet to the front such that it is services first
+               if header.direction == 1 {
+                  ep.pending_ins.push_front((header, cmd, data));
+                  return;
+               }
             }
 
             match header.direction {
@@ -274,14 +275,51 @@ impl UsbIpBusInner {
                      ep_out.data.push_back(chunk.to_vec());
                   }
                   // TODO: Add empty packet if it was requested},
+
+                  self.ack_out(header.ep, header.seqnum);
                }
                1 => {
-                  ep.bytes_requested = Some(cmd.transfer_buffer_length);
-                  self.try_send_pending(header.ep as usize);
+                  let ep_addr = header.ep;
+                  ep.pending_ins.push_back((header, cmd, data));
+                  self.try_send_pending(ep_addr as usize);
                }
                _ => panic!(),
             }
          }
       }
+   }
+
+   fn ack_out(&mut self, ep: u32, seqnum: u32) {
+      let response = UsbIpResponse {
+         header: UsbIpHeader {
+            command: 0x0003,
+            seqnum: seqnum,
+            devid: 2,
+            direction: 1,
+            ep,
+         },
+         cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
+            status: 0,
+            actual_length: 0,
+            start_frame: 0,
+            number_of_packets: 0,
+            error_count: 0,
+         }),
+         data: vec![],
+      };
+      log::info!(
+         "header: {:?}, cmd: {:?}. data: {:?}",
+         response.header,
+         response.cmd,
+         response.data
+      );
+
+      self
+         .handler
+         .connection
+         .as_mut()
+         .unwrap()
+         .write_all(&response.to_vec().unwrap())
+         .unwrap();
    }
 }

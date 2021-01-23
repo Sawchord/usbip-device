@@ -2,7 +2,10 @@ pub(crate) mod cmd;
 pub(crate) mod handler;
 pub(crate) mod op;
 
-use crate::handler::SocketHandler;
+use crate::{
+    cmd::{UsbIpCmdSubmit, UsbIpHeader},
+    handler::SocketHandler,
+};
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex, MutexGuard},
@@ -57,15 +60,27 @@ impl Pipe {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Endpoint {
     pub(crate) pipe_in: Option<Pipe>,
     pub(crate) pipe_out: Option<Pipe>,
-    pub(crate) seqnum: u32,
-    pub(crate) bytes_requested: Option<i32>,
+    pub(crate) pending_ins: VecDeque<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
     pub(crate) stalled: bool,
     pub(crate) setup_flag: bool,
     pub(crate) in_complete_flag: bool,
+}
+
+impl Default for Endpoint {
+    fn default() -> Self {
+        Self {
+            pipe_in: None,
+            pipe_out: None,
+            pending_ins: VecDeque::new(),
+            stalled: true,
+            setup_flag: false,
+            in_complete_flag: false,
+        }
+    }
 }
 
 impl Endpoint {
@@ -75,6 +90,13 @@ impl Endpoint {
 
     fn get_out(&mut self) -> UsbResult<&mut Pipe> {
         self.pipe_out.as_mut().ok_or(UsbError::InvalidEndpoint)
+    }
+
+    fn is_rts(&self) -> bool {
+        match self.pipe_in {
+            None => false,
+            Some(ref pipe) => pipe.is_rts(),
+        }
     }
 }
 
