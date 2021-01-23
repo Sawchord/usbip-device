@@ -2,7 +2,10 @@ pub(crate) mod cmd;
 pub(crate) mod handler;
 pub(crate) mod op;
 
-use crate::handler::SocketHandler;
+use crate::{
+    cmd::{UsbIpCmdSubmit, UsbIpHeader},
+    handler::SocketHandler,
+};
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex, MutexGuard},
@@ -41,6 +44,7 @@ const NUM_ENDPOINTS: usize = 8;
 #[derive(Debug, Clone)]
 pub(crate) struct Pipe {
     pub data: VecDeque<Vec<u8>>,
+    pub pending_urbs: VecDeque<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
     pub ty: EndpointType,
     pub max_packet_size: u16,
     pub interval: u8,
@@ -61,8 +65,6 @@ impl Pipe {
 pub struct Endpoint {
     pub(crate) pipe_in: Option<Pipe>,
     pub(crate) pipe_out: Option<Pipe>,
-    pub(crate) seqnum: u32,
-    pub(crate) bytes_requested: Option<i32>,
     pub(crate) stalled: bool,
     pub(crate) setup_flag: bool,
     pub(crate) in_complete_flag: bool,
@@ -182,6 +184,7 @@ impl UsbBus for UsbIpBus {
         // initialize the endpoint
         let pipe = Pipe {
             data: VecDeque::new(),
+            pending_urbs: VecDeque::new(),
             ty: ep_type,
             max_packet_size,
             interval,
@@ -228,7 +231,7 @@ impl UsbBus for UsbIpBus {
 
         // we attempt to service in packets, if we have them available
         if pipe.is_rts() {
-            inner.send_pending();
+            inner.handle_in(ep_addr.index());
         }
 
         Ok(buf.len())
