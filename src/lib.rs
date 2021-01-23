@@ -39,14 +39,14 @@ impl std::error::Error for UsbIpError {}
 const NUM_ENDPOINTS: usize = 8;
 
 #[derive(Debug, Clone)]
-pub(crate) struct EndpointConf {
+pub(crate) struct Pipe {
     pub data: VecDeque<Vec<u8>>,
     pub ty: EndpointType,
     pub max_packet_size: u16,
     pub interval: u8,
 }
 
-impl EndpointConf {
+impl Pipe {
     /// Checks, wether the endpoint contains a full transaction
     /// (terminated by a short packet) and is reay to send it.
     pub fn is_rts(&self) -> bool {
@@ -59,8 +59,8 @@ impl EndpointConf {
 
 #[derive(Debug, Clone, Default)]
 pub struct Endpoint {
-    pub(crate) in_ep: Option<EndpointConf>,
-    pub(crate) out_ep: Option<EndpointConf>,
+    pub(crate) pipe_in: Option<Pipe>,
+    pub(crate) pipe_out: Option<Pipe>,
     pub(crate) seqnum: u32,
     pub(crate) bytes_requested: Option<u32>,
     pub(crate) stalled: bool,
@@ -69,12 +69,12 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    fn get_in(&mut self) -> UsbResult<&mut EndpointConf> {
-        self.in_ep.as_mut().ok_or(UsbError::InvalidEndpoint)
+    fn get_in(&mut self) -> UsbResult<&mut Pipe> {
+        self.pipe_in.as_mut().ok_or(UsbError::InvalidEndpoint)
     }
 
-    fn get_out(&mut self) -> UsbResult<&mut EndpointConf> {
-        self.out_ep.as_mut().ok_or(UsbError::InvalidEndpoint)
+    fn get_out(&mut self) -> UsbResult<&mut Pipe> {
+        self.pipe_out.as_mut().ok_or(UsbError::InvalidEndpoint)
     }
 }
 
@@ -94,14 +94,14 @@ impl UsbIpBusInner {
         match direction {
             UsbDirection::In => {
                 for i in 1..NUM_ENDPOINTS {
-                    if self.endpoint[i].in_ep.is_none() {
+                    if self.endpoint[i].pipe_in.is_none() {
                         return Some(i);
                     }
                 }
             }
             UsbDirection::Out => {
                 for i in 1..NUM_ENDPOINTS {
-                    if self.endpoint[i].out_ep.is_none() {
+                    if self.endpoint[i].pipe_out.is_none() {
                         return Some(i);
                     }
                 }
@@ -180,15 +180,15 @@ impl UsbBus for UsbIpBus {
         // }
 
         // initialize the endpoint
-        let ep_conf = EndpointConf {
+        let pipe = Pipe {
             data: VecDeque::new(),
             ty: ep_type,
             max_packet_size,
             interval,
         };
         match ep_dir {
-            UsbDirection::In => endpoint.in_ep = Some(ep_conf),
-            UsbDirection::Out => endpoint.out_ep = Some(ep_conf),
+            UsbDirection::In => endpoint.pipe_in = Some(pipe),
+            UsbDirection::Out => endpoint.pipe_out = Some(pipe),
         }
 
         log::info!(
@@ -223,11 +223,11 @@ impl UsbBus for UsbIpBus {
         // The transfer completes immediately, since there is no real transfer
         ep.in_complete_flag = true;
 
-        let conf = ep.get_in()?;
-        conf.data.push_back(buf.to_vec());
+        let pipe = ep.get_in()?;
+        pipe.data.push_back(buf.to_vec());
 
         // we attempt to service in packets, if we have them available
-        if conf.is_rts() {
+        if pipe.is_rts() {
             inner.send_pending();
         }
 
@@ -238,10 +238,10 @@ impl UsbBus for UsbIpBus {
         log::debug!("read request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
         let ep = inner.get_endpoint(ep_addr.index())?;
-        let conf = ep.get_out()?;
+        let pipe = ep.get_out()?;
 
         // Try to get data
-        let data = match conf.data.pop_front() {
+        let data = match pipe.data.pop_front() {
             None => {
                 log::debug!("no data available at endpoint");
                 return Err(UsbError::WouldBlock);
@@ -334,8 +334,8 @@ impl UsbBus for UsbIpBus {
             let ep = &mut inner.endpoint[i];
 
             // Check for pending output
-            if let Some(ref conf) = ep.out_ep {
-                if !conf.data.is_empty() {
+            if let Some(ref pipe) = ep.pipe_out {
+                if !pipe.data.is_empty() {
                     ep_out |= 1;
                 }
             }
