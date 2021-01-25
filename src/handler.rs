@@ -94,7 +94,7 @@ impl UsbIpBusInner {
          return;
       }
 
-      let (header, cmd, _data) = match ep.pending_ins.pop_front() {
+      let (header, cmd, _) = match ep.pending_ins.pop_front() {
          Some(urb) => urb,
          None => return,
       };
@@ -344,16 +344,7 @@ impl UsbIpBusInner {
 
    /// Handle a received unlink package
    fn handle_unlink(&mut self, header: UsbIpHeader, unlink: UsbIpCmdUnlink) {
-      // Get the endpoint
-      let ep = match self.get_endpoint(header.ep as usize) {
-         Ok(ep) => ep,
-         Err(err) => {
-            log::warn!("reveiced message for unimplemented endpoint {:?}", err);
-            return;
-         }
-      };
-
-      match ep.unlink(unlink.seqnum) {
+      match self.unlink(unlink.seqnum) {
          true => (),
          false => {
             log::warn!(
@@ -363,7 +354,7 @@ impl UsbIpBusInner {
          }
       }
 
-      self.ack_unlink(header.ep, header.ep);
+      self.ack_unlink(header.ep, header.seqnum);
    }
 
    /// Send an acknowledgement after recieving an unlink package.
@@ -373,7 +364,7 @@ impl UsbIpBusInner {
             command: 0x0004,
             seqnum: seqnum,
             devid: 2,
-            direction: 1,
+            direction: 0,
             ep,
          },
          cmd: UsbIpResponseCmd::Unlink(UsbIpRetUnlink { status: 0 }),

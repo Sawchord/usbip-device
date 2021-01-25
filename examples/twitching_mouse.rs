@@ -22,10 +22,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
    let mut cnt = 0;
 
    loop {
-      if !usb_bus.poll(&mut [&mut usb_hid]) {
-         cnt += 5;
-         std::thread::sleep(std::time::Duration::from_millis(5));
-      }
+      std::thread::sleep(std::time::Duration::from_millis(5));
+      cnt += 5;
 
       if cnt == 1000 {
          usb_hid
@@ -38,5 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
          cnt = 0;
       }
+
+      usb_bus.poll(&mut [&mut usb_hid]);
    }
 }

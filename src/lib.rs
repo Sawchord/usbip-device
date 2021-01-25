@@ -102,11 +102,12 @@ impl Endpoint {
         }
     }
 
-    /// Processes an unlink and removes the pending packet.
+    /// Processes an unlink and removes the pending packet on this endpoint.
     ///
     /// # Returns
     /// - `true` if pending urb was removed
     /// - `false` if it was not found
+    // NOTE: This is super inefficient, use linked lists, as soon as linked_list_remove stabilizes
     fn unlink(&mut self, seqnum: u32) -> bool {
         let old_len = self.pending_ins.len();
 
@@ -166,6 +167,21 @@ impl UsbIpBusInner {
         }
 
         Ok(&mut self.endpoint[ep])
+    }
+
+    /// Processes an unlink and removes the pending packet.
+    ///
+    /// # Returns
+    /// - `true` if pending urb was removed
+    /// - `false` if it was not found
+    fn unlink(&mut self, seqnum: u32) -> bool {
+        for i in 0..NUM_ENDPOINTS {
+            if self.endpoint[i].unlink(seqnum) {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
