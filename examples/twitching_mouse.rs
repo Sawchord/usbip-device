@@ -45,9 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
    let mut usb_hid = HIDClass::new(&bus_allocator, MouseReport::desc(), 5);
    //let mut usb_hid = HIDClass::new(&bus_allocator, &DESC, 5);
    let mut usb_bus = UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x27dd))
-      .manufacturer("Fake company")
-      .product("Twitchy Mousey")
-      .serial_number("TEST")
+      //.manufacturer("Fake company")
+      //.product("Twitchy Mousey")
+      //.serial_number("TEST")
       .device_class(0xEF)
       .build();
 

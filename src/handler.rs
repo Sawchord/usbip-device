@@ -97,10 +97,7 @@ impl UsbIpBusInner {
 
       let (header, _cmd, _) = match ep.pending_ins.pop_front() {
          Some(urb) => urb,
-         None => {
-            log::warn!("tried sending but ep was empty");
-            return;
-         }
+         None => return,
       };
       //let bytes_requested = cmd.transfer_buffer_length;
 
@@ -312,7 +309,7 @@ impl UsbIpBusInner {
             command: 0x0003,
             seqnum,
             devid: 2,
-            direction: 1,
+            direction: 0,
             ep,
          },
          cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
