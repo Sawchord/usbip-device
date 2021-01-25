@@ -19,10 +19,18 @@ use usb_device::{
 };
 
 #[derive(Debug, Clone)]
+/// The error type, used by this crate.
 pub enum UsbIpError {
+    /// The connection closed unexpectedly.
     ConnectionClosed,
+
+    /// A packet was received but it was shorter than the 48 bytes required to parse the header.
     PkgTooShort(usize),
+
+    /// A received packet contained a command, that is unknown to the USBIP specification.
     InvalidCommand(u16),
+
+    /// A received packet had a status field set to an unknown status value.
     StatusNotOk(u32),
 }
 
@@ -61,7 +69,7 @@ impl Pipe {
 }
 
 #[derive(Debug, Clone)]
-pub struct Endpoint {
+struct Endpoint {
     pub(crate) pipe_in: Option<Pipe>,
     pub(crate) pipe_out: Option<Pipe>,
     pub(crate) pending_ins: VecDeque<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
@@ -186,20 +194,27 @@ impl UsbIpBusInner {
 }
 
 #[derive(Debug, Clone)]
+/// An implementation of [`UsbBus`](https://docs.rs/usb-device/0.2.7/usb_device/bus/trait.UsbBus.html),
+/// based on the Linux USBIP protocol.
 pub struct UsbIpBus(Arc<Mutex<UsbIpBusInner>>);
 
 impl UsbIpBus {
     /// Create a new [`UsbIpBus`].
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let new_bus = Self(Arc::new(Mutex::new(UsbIpBusInner {
+    ///
+    /// # Note
+    /// There can only ever be one bus [`UsbIpBus`] device on the system, since
+    /// it is blocking port 3240.
+    ///
+    /// # Panics
+    /// If port 3240 is already in use.
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(UsbIpBusInner {
             handler: SocketHandler::new(),
             endpoint: <[Endpoint; NUM_ENDPOINTS]>::default(),
             device_address: 0,
             reset: true,
             suspended: false,
-        })));
-
-        Ok(new_bus)
+        })))
     }
 
     fn lock(&self) -> MutexGuard<UsbIpBusInner> {

@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
    log::info!("initializing allocator");
 
-   let bus_allocator = UsbBusAllocator::new(UsbIpBus::new()?);
+   let bus_allocator = UsbBusAllocator::new(UsbIpBus::new());
    let mut usb_serial = SerialPort::new(&bus_allocator);
    let mut usb_bus = UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x27dd))
       .manufacturer("Fake company")
@@ -24,8 +24,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       if let Ok(count) = usb_serial.read(&mut buf) {
          let text = String::from_utf8_lossy(&buf);
          log::info!("read {} bytes: {}", count, text);
-
-         // Possible improvement: Make all packets to uppercase
 
          // Send back, poll usb until we are ready
          loop {
