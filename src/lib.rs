@@ -234,10 +234,19 @@ impl UsbBus for UsbIpBus {
 
         let endpoint = &mut inner.endpoint[endpoint_index as usize];
 
-        // TODO: Check endpoint allocation here
-        //if !endpoint.is_none() {
-        //    return Err(UsbError::InvalidEndpoint);
-        //}
+        // check endpoint allocation here
+        let maybe_pipe = match ep_dir {
+            UsbDirection::In => endpoint.get_in(),
+            UsbDirection::Out => endpoint.get_out(),
+        };
+
+        // we want to get an invalid enpoint, otherwise the requested endpoint
+        // was already allocated
+        match maybe_pipe {
+            Err(UsbError::InvalidEndpoint) => (),
+            Ok(_) => return Err(UsbError::InvalidEndpoint),
+            Err(_) => return Err(UsbError::InvalidEndpoint),
+        }
 
         // initialize the endpoint
         let pipe = Pipe {
