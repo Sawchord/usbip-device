@@ -234,10 +234,10 @@ impl UsbBus for UsbIpBus {
 
         let endpoint = &mut inner.endpoint[endpoint_index as usize];
 
-        // if address is already in use,
-        // if !endpoint.is_none() {
-        //     return Err(UsbError::InvalidEndpoint);
-        // }
+        // TODO: Check endpoint allocation here
+        //if !endpoint.is_none() {
+        //    return Err(UsbError::InvalidEndpoint);
+        //}
 
         // initialize the endpoint
         let pipe = Pipe {
@@ -280,10 +280,18 @@ impl UsbBus for UsbIpBus {
         log::debug!("write request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
         let ep = inner.get_endpoint(ep_addr.index())?;
+
         // The transfer completes immediately, since there is no real transfer
         ep.in_complete_flag = true;
 
         let pipe = ep.get_in()?;
+
+        // If there is data waiting in the output buffer, we need to wait
+        if pipe.is_rts() {
+            ep.in_complete_flag = false;
+            return Err(UsbError::WouldBlock);
+        }
+
         pipe.data.push_back(buf.to_vec());
 
         // we attempt to service in packets, if we have them available

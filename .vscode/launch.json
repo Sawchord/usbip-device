@@ -41,21 +41,20 @@
       {
          "type": "lldb",
          "request": "launch",
-         "name": "Debug unit tests in example 'serial_echo'",
+         "name": "Debug example 'twitching_mouse'",
          "cargo": {
             "args": [
-               "test",
-               "--no-run",
-               "--example=serial_echo",
+               "build",
+               "--example=twitching_mouse",
                "--package=usbip-device"
             ],
             "filter": {
-               "name": "serial_echo",
+               "name": "twitching_mouse",
                "kind": "example"
             }
          },
          "args": [],
          "cwd": "${workspaceFolder}"
-      }
+      },
    ]
 }

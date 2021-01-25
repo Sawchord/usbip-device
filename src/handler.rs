@@ -84,21 +84,21 @@ impl UsbIpBusInner {
    pub fn try_send_pending(&mut self, ep_addr: usize) {
       let ep = match self.get_endpoint(ep_addr) {
          Ok(ep) => ep,
-         Err(_) => {
-            log::warn!("request to send on uninitalized endpoint");
-            return;
-         }
+         Err(_) => return,
       };
 
       if !ep.is_rts() {
          return;
       }
 
-      let (header, cmd, _) = match ep.pending_ins.pop_front() {
+      let (header, _cmd, _) = match ep.pending_ins.pop_front() {
          Some(urb) => urb,
-         None => return,
+         None => {
+            log::warn!("tried sending but ep was empty");
+            return;
+         }
       };
-      let bytes_requested = cmd.transfer_buffer_length;
+      //let bytes_requested = cmd.transfer_buffer_length;
 
       let ep_in = match ep.get_in() {
          Ok(ep_in) => ep_in,
@@ -108,18 +108,20 @@ impl UsbIpBusInner {
 
       // Read data from the packet buffer into the output buffer
       // We must be careful to not send more bytes than requested
+      // FIXME: Fix this up so it supports transfer_buffers smaller than waiting data
       let mut out_buf = vec![];
       while let Some(data) = ep_in.data.pop_front() {
-         let bytes_left = bytes_requested as usize - out_buf.len();
-         let bytes_to_read = usize::min(data.len(), bytes_left);
+         //let bytes_left = bytes_requested as usize - out_buf.len();
+         //let bytes_to_read = usize::min(data.len(), bytes_left);
 
-         out_buf.extend_from_slice(&data[..bytes_to_read]);
+         //out_buf.extend_from_slice(&data[..bytes_to_read]);
+         out_buf.extend_from_slice(&data);
 
-         if bytes_to_read != data.len() {
-            assert_eq!(out_buf.len(), bytes_requested as usize);
-            ep_in.data.push_front(data[bytes_to_read..].to_vec());
-            break;
-         }
+         // if bytes_to_read != data.len() {
+         //    assert_eq!(out_buf.len(), bytes_requested as usize);
+         //    ep_in.data.push_front(data[bytes_to_read..].to_vec());
+         //    break;
+         // }
       }
 
       // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
@@ -133,7 +135,6 @@ impl UsbIpBusInner {
             ep: ep_addr as u32,
          },
          cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
-            // TODO: Check these settings
             status: 0,
             actual_length: out_buf.len() as i32,
             start_frame: 0,
@@ -270,15 +271,8 @@ impl UsbIpBusInner {
       // check wether we have a setup packet
       // NOTE: This assumes the control endpoints have no URBs pending
       if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
-         log::info!("setup was requested");
          ep.get_out().unwrap().data.push_back(cmd.setup.to_vec());
          ep.setup_flag = true;
-
-         // Push this in packet to the front such that it is services first
-         // if header.direction == 1 {
-         //    ep.pending_ins.push_front((header, cmd, data));
-         //    return;
-         // }
       }
 
       match header.direction {
