@@ -104,7 +104,7 @@ impl UsbIpRequest {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct UsbIpCmdSubmit {
-   pub transfer_flags: u32,
+   pub transfer_flags: TransferFlags,
    pub transfer_buffer_length: i32,
    pub start_frame: i32,
    pub number_of_packets: i32,
@@ -115,7 +115,9 @@ pub struct UsbIpCmdSubmit {
 impl UsbIpCmdSubmit {
    fn from_slice(data: &[u8]) -> Self {
       Self {
-         transfer_flags: u32::from_be_bytes(data[0..4].try_into().unwrap()),
+         transfer_flags: TransferFlags::from_bits_truncate(u32::from_be_bytes(
+            data[0..4].try_into().unwrap(),
+         )),
          transfer_buffer_length: i32::from_be_bytes(data[4..8].try_into().unwrap()),
          start_frame: i32::from_be_bytes(data[8..12].try_into().unwrap()),
          number_of_packets: i32::from_be_bytes(data[12..16].try_into().unwrap()),
@@ -125,7 +127,17 @@ impl UsbIpCmdSubmit {
    }
 }
 
-// TODO: Implement transfer flags
+bitflags::bitflags! {
+   pub struct TransferFlags: u32 {
+      const SHORT_NOT_OK = 0x00000001;
+      const ISO_ASAP = 0x00000002;
+      const NO_TRANSFER_DMA_MAP = 0x00000004;
+      const ZERO_PACKET = 0x00000040;
+      const NO_INTERRUPT = 0x00000080;
+      const FREE_BUFFER = 0x00000100;
+      const DIR_MASK = 0x00000200;
+   }
+}
 
 #[derive(Debug, Clone)]
 pub struct UsbIpResponse {

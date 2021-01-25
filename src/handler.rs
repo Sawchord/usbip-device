@@ -1,5 +1,7 @@
 use crate::{
-   cmd::{UsbIpHeader, UsbIpRequest, UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit},
+   cmd::{
+      TransferFlags, UsbIpHeader, UsbIpRequest, UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit,
+   },
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
    UsbIpBusInner,
 };
@@ -7,7 +9,7 @@ use std::{
    io::{ErrorKind, Write},
    net::{TcpListener, TcpStream},
 };
-use usb_device::UsbError;
+use usb_device::{endpoint::EndpointType, UsbError};
 
 #[derive(Debug)]
 pub struct SocketHandler {
@@ -97,8 +99,8 @@ impl UsbIpBusInner {
       };
       let bytes_requested = cmd.transfer_buffer_length;
 
-      let conf = match ep.get_in() {
-         Ok(conf) => conf,
+      let ep_in = match ep.get_in() {
+         Ok(ep_in) => ep_in,
          Err(UsbError::InvalidEndpoint) => return,
          Err(e) => panic!("unexpected error {:?} while processing in packet", e),
       };
@@ -106,7 +108,7 @@ impl UsbIpBusInner {
       // Read data from the packet buffer into the output buffer
       // We must be careful to not send more bytes than requested
       let mut out_buf = vec![];
-      while let Some(data) = conf.data.pop_front() {
+      while let Some(data) = ep_in.data.pop_front() {
          let bytes_left = bytes_requested as usize - out_buf.len();
          let bytes_to_read = usize::min(data.len(), bytes_left);
 
@@ -114,7 +116,7 @@ impl UsbIpBusInner {
 
          if bytes_to_read != data.len() {
             assert_eq!(out_buf.len(), bytes_requested as usize);
-            conf.data.push_front(data[bytes_to_read..].to_vec());
+            ep_in.data.push_front(data[bytes_to_read..].to_vec());
             break;
          }
       }
@@ -182,7 +184,7 @@ impl UsbIpBusInner {
                   num_interfaces: 1,
                },
                cmd: OpResponseCommand::ListDevices(OpInterfaceDescriptor {
-                  // TODO: Make these settabel
+                  // TODO: Make these setable
                   interface_class: 0,
                   interface_subclass: 0,
                   interface_protocol: 0,
@@ -254,16 +256,17 @@ impl UsbIpBusInner {
             };
 
             // check wether we have a setup packet
+            // NOTE: This assumes the control endpoints have no URBs pending
             if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
                log::info!("setup was requested");
                ep.get_out().unwrap().data.push_back(cmd.setup.to_vec());
                ep.setup_flag = true;
 
                // Push this in packet to the front such that it is services first
-               if header.direction == 1 {
-                  ep.pending_ins.push_front((header, cmd, data));
-                  return;
-               }
+               // if header.direction == 1 {
+               //    ep.pending_ins.push_front((header, cmd, data));
+               //    return;
+               // }
             }
 
             match header.direction {
@@ -274,7 +277,12 @@ impl UsbIpBusInner {
                   for chunk in data.chunks(ep_out.max_packet_size as usize) {
                      ep_out.data.push_back(chunk.to_vec());
                   }
-                  // TODO: Add empty packet if it was requested},
+
+                  if cmd.transfer_flags.contains(TransferFlags::ZERO_PACKET)
+                     && ep_out.ty == EndpointType::Bulk
+                  {
+                     ep_out.data.push_back(vec![]);
+                  }
 
                   self.ack_out(header.ep, header.seqnum);
                }
