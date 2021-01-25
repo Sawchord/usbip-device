@@ -29,6 +29,10 @@ impl SocketHandler {
          connection: None,
       }
    }
+
+   pub fn is_connected(&self) -> bool {
+      self.connection.is_some()
+   }
 }
 
 impl UsbIpBusInner {
@@ -306,7 +310,7 @@ impl UsbIpBusInner {
       let response = UsbIpResponse {
          header: UsbIpHeader {
             command: 0x0003,
-            seqnum: seqnum,
+            seqnum,
             devid: 2,
             direction: 1,
             ep,
@@ -356,7 +360,7 @@ impl UsbIpBusInner {
       let response = UsbIpResponse {
          header: UsbIpHeader {
             command: 0x0004,
-            seqnum: seqnum,
+            seqnum,
             devid: 2,
             direction: 0,
             ep,

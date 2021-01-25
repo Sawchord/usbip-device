@@ -288,6 +288,13 @@ impl UsbBus for UsbIpBus {
     fn write(&self, ep_addr: EndpointAddress, buf: &[u8]) -> UsbResult<usize> {
         log::debug!("write request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
+
+        // We can not write anything, as long as there is no connection
+        if !inner.handler.is_connected() {
+            return Err(UsbError::WouldBlock);
+        }
+
+        // Get the endpoint
         let ep = inner.get_endpoint(ep_addr.index())?;
 
         // The transfer completes immediately, since there is no real transfer
