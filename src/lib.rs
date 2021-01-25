@@ -7,7 +7,7 @@ use crate::{
     handler::SocketHandler,
 };
 use std::{
-    collections::{LinkedList, VecDeque},
+    collections::VecDeque,
     sync::{Arc, Mutex, MutexGuard},
 };
 use usb_device::{
@@ -64,7 +64,7 @@ impl Pipe {
 pub struct Endpoint {
     pub(crate) pipe_in: Option<Pipe>,
     pub(crate) pipe_out: Option<Pipe>,
-    pub(crate) pending_ins: LinkedList<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
+    pub(crate) pending_ins: VecDeque<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
     pub(crate) stalled: bool,
     pub(crate) setup_flag: bool,
     pub(crate) in_complete_flag: bool,
@@ -75,7 +75,7 @@ impl Default for Endpoint {
         Self {
             pipe_in: None,
             pipe_out: None,
-            pending_ins: LinkedList::new(),
+            pending_ins: VecDeque::new(),
             stalled: true,
             setup_flag: false,
             in_complete_flag: false,
@@ -84,19 +84,41 @@ impl Default for Endpoint {
 }
 
 impl Endpoint {
+    /// Returns the input pipe of this endpoint
     fn get_in(&mut self) -> UsbResult<&mut Pipe> {
         self.pipe_in.as_mut().ok_or(UsbError::InvalidEndpoint)
     }
 
+    /// Returns the output pipe of this endpoint
     fn get_out(&mut self) -> UsbResult<&mut Pipe> {
         self.pipe_out.as_mut().ok_or(UsbError::InvalidEndpoint)
     }
 
+    /// Checks, whether the input pipe is ready to send data back to the host.
     fn is_rts(&self) -> bool {
         match self.pipe_in {
             None => false,
             Some(ref pipe) => pipe.is_rts(),
         }
+    }
+
+    /// Processes an unlink and removes the pending packet.
+    ///
+    /// # Returns
+    /// - `true` if pending urb was removed
+    /// - `false` if it was not found
+    fn unlink(&mut self, seqnum: u32) -> bool {
+        let old_len = self.pending_ins.len();
+
+        self.pending_ins = self
+            .pending_ins
+            .drain(..)
+            .filter(|(header, _, _)| header.seqnum != seqnum)
+            .collect();
+
+        // If the length is the same as before, we have not changed anything
+        // and return false
+        old_len != self.pending_ins.len()
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::{
    cmd::{
-      TransferFlags, UsbIpHeader, UsbIpRequest, UsbIpRequestCmd, UsbIpResponse, UsbIpResponseCmd,
-      UsbIpRetSubmit,
+      TransferFlags, UsbIpCmdSubmit, UsbIpCmdUnlink, UsbIpHeader, UsbIpRequest, UsbIpRequestCmd,
+      UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit, UsbIpRetUnlink,
    },
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
    UsbIpBusInner,
@@ -74,7 +74,7 @@ impl UsbIpBusInner {
                      }
                      Err(err) => panic!("unexpected error {}", err),
                   };
-                  self.handle_cmd(cmd);
+                  self.handle_usbip_pkg(cmd);
                }
             }
          }
@@ -242,69 +242,73 @@ impl UsbIpBusInner {
       }
    }
 
-   fn handle_cmd(&mut self, request: UsbIpRequest) {
+   fn handle_usbip_pkg(&mut self, request: UsbIpRequest) {
+      log::info!(
+         "header: {:?}, cmd: {:?}, data: {:?}",
+         request.header,
+         request.cmd,
+         request.data
+      );
+
       match request.cmd {
-         UsbIpRequestCmd::Cmd(cmd) => {
-            log::info!(
-               "header: {:?}, cmd: {:?}, data: {:?}",
-               request.header,
-               cmd,
-               request.data
-            );
-
-            // Get the endpoint
-            let ep = match self.get_endpoint(request.header.ep as usize) {
-               Ok(ep) => ep,
-               Err(err) => {
-                  log::warn!("reveiced message for unimplemented endpoint {:?}", err);
-                  return;
-               }
-            };
-
-            // check wether we have a setup packet
-            // NOTE: This assumes the control endpoints have no URBs pending
-            if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
-               log::info!("setup was requested");
-               ep.get_out().unwrap().data.push_back(cmd.setup.to_vec());
-               ep.setup_flag = true;
-
-               // Push this in packet to the front such that it is services first
-               // if header.direction == 1 {
-               //    ep.pending_ins.push_front((header, cmd, data));
-               //    return;
-               // }
-            }
-
-            match request.header.direction {
-               0 => {
-                  let ep_out = ep.get_out().unwrap();
-
-                  // pass the data into the correct buffers
-                  for chunk in request.data.chunks(ep_out.max_packet_size as usize) {
-                     ep_out.data.push_back(chunk.to_vec());
-                  }
-
-                  if cmd.transfer_flags.contains(TransferFlags::ZERO_PACKET)
-                     && ep_out.ty == EndpointType::Bulk
-                  {
-                     ep_out.data.push_back(vec![]);
-                  }
-
-                  self.ack_out(request.header.ep, request.header.seqnum);
-               }
-               1 => {
-                  let ep_addr = request.header.ep;
-                  ep.pending_ins
-                     .push_back((request.header, cmd, request.data));
-                  self.try_send_pending(ep_addr as usize);
-               }
-               _ => panic!(),
-            }
-         }
+         UsbIpRequestCmd::Unlink(unlink) => self.handle_unlink(request.header, unlink),
+         UsbIpRequestCmd::Cmd(cmd) => self.handle_cmd(request.header, cmd, request.data),
       }
    }
 
-   fn ack_out(&mut self, ep: u32, seqnum: u32) {
+   /// Handle a [`UsbIpCmdSubmit`] package
+   fn handle_cmd(&mut self, header: UsbIpHeader, cmd: UsbIpCmdSubmit, data: Vec<u8>) {
+      // Get the endpoint
+      let ep = match self.get_endpoint(header.ep as usize) {
+         Ok(ep) => ep,
+         Err(err) => {
+            log::warn!("reveiced message for unimplemented endpoint {:?}", err);
+            return;
+         }
+      };
+
+      // check wether we have a setup packet
+      // NOTE: This assumes the control endpoints have no URBs pending
+      if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
+         log::info!("setup was requested");
+         ep.get_out().unwrap().data.push_back(cmd.setup.to_vec());
+         ep.setup_flag = true;
+
+         // Push this in packet to the front such that it is services first
+         // if header.direction == 1 {
+         //    ep.pending_ins.push_front((header, cmd, data));
+         //    return;
+         // }
+      }
+
+      match header.direction {
+         0 => {
+            let ep_out = ep.get_out().unwrap();
+
+            // pass the data into the correct buffers
+            for chunk in data.chunks(ep_out.max_packet_size as usize) {
+               ep_out.data.push_back(chunk.to_vec());
+            }
+
+            if cmd.transfer_flags.contains(TransferFlags::ZERO_PACKET)
+               && ep_out.ty == EndpointType::Bulk
+            {
+               ep_out.data.push_back(vec![]);
+            }
+
+            self.ack_cmd_out(header.ep, header.seqnum);
+         }
+         1 => {
+            let ep_addr = header.ep;
+            ep.pending_ins.push_back((header, cmd, data));
+            self.try_send_pending(ep_addr as usize);
+         }
+         _ => panic!(),
+      }
+   }
+
+   /// Send an acknowledgement after recieving a cmd out package.
+   fn ack_cmd_out(&mut self, ep: u32, seqnum: u32) {
       let response = UsbIpResponse {
          header: UsbIpHeader {
             command: 0x0003,
@@ -320,6 +324,59 @@ impl UsbIpBusInner {
             number_of_packets: 0,
             error_count: 0,
          }),
+         data: vec![],
+      };
+      log::info!(
+         "header: {:?}, cmd: {:?}. data: {:?}",
+         response.header,
+         response.cmd,
+         response.data
+      );
+
+      self
+         .handler
+         .connection
+         .as_mut()
+         .unwrap()
+         .write_all(&response.to_vec().unwrap())
+         .unwrap();
+   }
+
+   /// Handle a received unlink package
+   fn handle_unlink(&mut self, header: UsbIpHeader, unlink: UsbIpCmdUnlink) {
+      // Get the endpoint
+      let ep = match self.get_endpoint(header.ep as usize) {
+         Ok(ep) => ep,
+         Err(err) => {
+            log::warn!("reveiced message for unimplemented endpoint {:?}", err);
+            return;
+         }
+      };
+
+      match ep.unlink(unlink.seqnum) {
+         true => (),
+         false => {
+            log::warn!(
+               "received request to remove urb {} that does not exists",
+               unlink.seqnum
+            );
+         }
+      }
+
+      self.ack_unlink(header.ep, header.ep);
+   }
+
+   /// Send an acknowledgement after recieving an unlink package.
+   fn ack_unlink(&mut self, ep: u32, seqnum: u32) {
+      let response = UsbIpResponse {
+         header: UsbIpHeader {
+            command: 0x0004,
+            seqnum: seqnum,
+            devid: 2,
+            direction: 1,
+            ep,
+         },
+         cmd: UsbIpResponseCmd::Unlink(UsbIpRetUnlink { status: 0 }),
          data: vec![],
       };
       log::info!(

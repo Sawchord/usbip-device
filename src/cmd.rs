@@ -48,6 +48,7 @@ pub struct UsbIpRequest {
 #[derive(Debug, Clone)]
 pub enum UsbIpRequestCmd {
    Cmd(UsbIpCmdSubmit),
+   Unlink(UsbIpCmdUnlink),
 }
 
 impl UsbIpRequest {
@@ -108,7 +109,11 @@ impl UsbIpRequest {
 
             // NOTE: We do not expect to see urb data behind an unlink
 
-            todo!()
+            Ok(Self {
+               header,
+               cmd: UsbIpRequestCmd::Unlink(unlink),
+               data: vec![],
+            })
          }
          _ => Err(Error::new(
             ErrorKind::InvalidInput,
@@ -157,7 +162,7 @@ bitflags::bitflags! {
 
 #[derive(Debug, Clone)]
 pub struct UsbIpCmdUnlink {
-   seqnum: u32,
+   pub seqnum: u32,
 }
 
 impl UsbIpCmdUnlink {
@@ -231,7 +236,7 @@ impl UsbIpRetSubmit {
 
 #[derive(Debug, Clone)]
 pub struct UsbIpRetUnlink {
-   status: u32,
+   pub status: u32,
 }
 
 impl UsbIpRetUnlink {
