@@ -1,6 +1,7 @@
 use crate::{
    cmd::{
-      TransferFlags, UsbIpHeader, UsbIpRequest, UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit,
+      TransferFlags, UsbIpHeader, UsbIpRequest, UsbIpRequestCmd, UsbIpResponse, UsbIpResponseCmd,
+      UsbIpRetSubmit,
    },
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
    UsbIpBusInner,
@@ -241,13 +242,18 @@ impl UsbIpBusInner {
       }
    }
 
-   fn handle_cmd(&mut self, cmd: UsbIpRequest) {
-      match cmd {
-         UsbIpRequest::Cmd(header, cmd, data) => {
-            log::info!("header: {:?}, cmd: {:?}, data: {:?}", header, cmd, data);
+   fn handle_cmd(&mut self, request: UsbIpRequest) {
+      match request.cmd {
+         UsbIpRequestCmd::Cmd(cmd) => {
+            log::info!(
+               "header: {:?}, cmd: {:?}, data: {:?}",
+               request.header,
+               cmd,
+               request.data
+            );
 
             // Get the endpoint
-            let ep = match self.get_endpoint(header.ep as usize) {
+            let ep = match self.get_endpoint(request.header.ep as usize) {
                Ok(ep) => ep,
                Err(err) => {
                   log::warn!("reveiced message for unimplemented endpoint {:?}", err);
@@ -269,12 +275,12 @@ impl UsbIpBusInner {
                // }
             }
 
-            match header.direction {
+            match request.header.direction {
                0 => {
                   let ep_out = ep.get_out().unwrap();
 
                   // pass the data into the correct buffers
-                  for chunk in data.chunks(ep_out.max_packet_size as usize) {
+                  for chunk in request.data.chunks(ep_out.max_packet_size as usize) {
                      ep_out.data.push_back(chunk.to_vec());
                   }
 
@@ -284,11 +290,12 @@ impl UsbIpBusInner {
                      ep_out.data.push_back(vec![]);
                   }
 
-                  self.ack_out(header.ep, header.seqnum);
+                  self.ack_out(request.header.ep, request.header.seqnum);
                }
                1 => {
-                  let ep_addr = header.ep;
-                  ep.pending_ins.push_back((header, cmd, data));
+                  let ep_addr = request.header.ep;
+                  ep.pending_ins
+                     .push_back((request.header, cmd, request.data));
                   self.try_send_pending(ep_addr as usize);
                }
                _ => panic!(),

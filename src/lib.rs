@@ -7,7 +7,7 @@ use crate::{
     handler::SocketHandler,
 };
 use std::{
-    collections::VecDeque,
+    collections::{LinkedList, VecDeque},
     sync::{Arc, Mutex, MutexGuard},
 };
 use usb_device::{
@@ -64,7 +64,7 @@ impl Pipe {
 pub struct Endpoint {
     pub(crate) pipe_in: Option<Pipe>,
     pub(crate) pipe_out: Option<Pipe>,
-    pub(crate) pending_ins: VecDeque<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
+    pub(crate) pending_ins: LinkedList<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
     pub(crate) stalled: bool,
     pub(crate) setup_flag: bool,
     pub(crate) in_complete_flag: bool,
@@ -75,7 +75,7 @@ impl Default for Endpoint {
         Self {
             pipe_in: None,
             pipe_out: None,
-            pending_ins: VecDeque::new(),
+            pending_ins: LinkedList::new(),
             stalled: true,
             setup_flag: false,
             in_complete_flag: false,

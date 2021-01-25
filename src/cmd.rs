@@ -5,9 +5,6 @@ use std::{
    net::TcpStream,
 };
 
-// TODO: Unlink commands
-
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct UsbIpHeader {
    pub command: u32,
@@ -41,8 +38,16 @@ impl UsbIpHeader {
    }
 }
 
-pub enum UsbIpRequest {
-   Cmd(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>),
+#[derive(Debug, Clone)]
+pub struct UsbIpRequest {
+   pub header: UsbIpHeader,
+   pub cmd: UsbIpRequestCmd,
+   pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub enum UsbIpRequestCmd {
+   Cmd(UsbIpCmdSubmit),
 }
 
 impl UsbIpRequest {
@@ -78,20 +83,32 @@ impl UsbIpRequest {
 
       match header.command {
          0x00000001 => {
-            let command = UsbIpCmdSubmit::from_slice(&buf[20..48]);
+            let cmd = UsbIpCmdSubmit::from_slice(&buf[20..48]);
 
             // Receive the URB if this is a OUT packet
-            let urb_buf = if header.direction == 0 && command.transfer_buffer_length != 0 {
+            let data = if header.direction == 0 && cmd.transfer_buffer_length != 0 {
                // NOTE: Reading 0 bytes would still block the reader
-               let mut urb_buf = vec![0; command.transfer_buffer_length as usize];
-               reader.read_exact(&mut urb_buf)?;
+               let mut data = vec![0; cmd.transfer_buffer_length as usize];
+               reader.read_exact(&mut data)?;
 
-               urb_buf
+               data
             } else {
                vec![]
             };
 
-            Ok(Self::Cmd(header, command, urb_buf))
+            //Ok(Self::Cmd(header, cmd, data))
+            Ok(Self {
+               header,
+               cmd: UsbIpRequestCmd::Cmd(cmd),
+               data,
+            })
+         }
+         0x00000002 => {
+            let unlink = UsbIpCmdUnlink::from_slice(&buf[20..24]);
+
+            // NOTE: We do not expect to see urb data behind an unlink
+
+            todo!()
          }
          _ => Err(Error::new(
             ErrorKind::InvalidInput,
@@ -101,7 +118,6 @@ impl UsbIpRequest {
    }
 }
 
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct UsbIpCmdSubmit {
    pub transfer_flags: TransferFlags,
@@ -140,6 +156,20 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Clone)]
+pub struct UsbIpCmdUnlink {
+   seqnum: u32,
+}
+
+impl UsbIpCmdUnlink {
+   fn from_slice(data: &[u8]) -> Self {
+      Self {
+         seqnum: u32::from_be_bytes(data[0..4].try_into().unwrap()),
+      }
+   }
+}
+
+// TODO: Make header command field unsettable and set it by cmd
+#[derive(Debug, Clone)]
 pub struct UsbIpResponse {
    pub header: UsbIpHeader,
    pub cmd: UsbIpResponseCmd,
@@ -149,6 +179,7 @@ pub struct UsbIpResponse {
 #[derive(Debug, Clone)]
 pub enum UsbIpResponseCmd {
    Cmd(UsbIpRetSubmit),
+   Unlink(UsbIpRetUnlink),
 }
 
 impl UsbIpResponse {
@@ -163,6 +194,9 @@ impl UsbIpResponse {
          UsbIpResponseCmd::Cmd(ref cmd) => {
             result.extend_from_slice(&cmd.to_array());
          }
+         UsbIpResponseCmd::Unlink(ref unlink) => {
+            result.extend_from_slice(&unlink.to_array());
+         }
       }
 
       // parse the data
@@ -172,7 +206,6 @@ impl UsbIpResponse {
    }
 }
 
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct UsbIpRetSubmit {
    pub status: i32,
@@ -192,6 +225,19 @@ impl UsbIpRetSubmit {
       result[12..16].copy_from_slice(&self.number_of_packets.to_be_bytes());
       result[16..20].copy_from_slice(&self.error_count.to_be_bytes());
 
+      result
+   }
+}
+
+#[derive(Debug, Clone)]
+pub struct UsbIpRetUnlink {
+   status: u32,
+}
+
+impl UsbIpRetUnlink {
+   fn to_array(&self) -> [u8; 28] {
+      let mut result = [0; 28];
+      result[0..4].copy_from_slice(&self.status.to_be_bytes());
       result
    }
 }
