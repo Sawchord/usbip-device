@@ -3,10 +3,11 @@ name = "usbip-device"
 version = "0.1.0"
 authors = ["Leon Tan <leon.arian.tan@gmail.com>"]
 edition = "2018"
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 usb-device = { version = "0.2.7", default-features = false }
-log = { version = "0.4.13", default-features = false }
+log = { version = "0.4.14", default-features = false }
 bitflags = { version = "1.2.1", default-features = false }
 
 [dev-dependencies]
