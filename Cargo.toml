@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Leon Tan <leon.arian.tan@gmail.com>"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
+description = "An implementation of usb-device on top of USBIP device."
 
 [dependencies]
 usb-device = { version = "0.2.7", default-features = false }
