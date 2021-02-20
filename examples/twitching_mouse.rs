@@ -30,6 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             x: 0,
             y: 4,
             buttons: 0,
+            wheel: 0,
          });
 
          cnt = 0;
