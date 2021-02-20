@@ -290,7 +290,7 @@ impl UsbBus for UsbIpBus {
 
     fn reset(&self) {
         // TODO: Delete content of all endpoints and unstall them
-        log::debug!("usb device is being reset");
+        log::trace!("usb device is being reset");
     }
 
     fn set_device_address(&self, addr: u8) {
@@ -334,7 +334,7 @@ impl UsbBus for UsbIpBus {
     }
 
     fn read(&self, ep_addr: EndpointAddress, buf: &mut [u8]) -> UsbResult<usize> {
-        log::debug!("read request at endpoint {}", ep_addr.index());
+        log::trace!("read request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
         let ep = inner.get_endpoint(ep_addr.index())?;
         let pipe = ep.get_out()?;
@@ -342,7 +342,7 @@ impl UsbBus for UsbIpBus {
         // Try to get data
         let data = match pipe.data.pop_front() {
             None => {
-                log::debug!("no data available at endpoint");
+                log::trace!("no data available at endpoint");
                 return Err(UsbError::WouldBlock);
             }
             Some(data) => data,
@@ -412,12 +412,12 @@ impl UsbBus for UsbIpBus {
         inner.handle_socket();
 
         if inner.reset {
-            log::debug!("device is in reset state");
+            log::trace!("device is in reset state");
             return PollResult::Reset;
         }
 
         if inner.suspended {
-            log::debug!("device is suspended");
+            log::trace!("device is suspended");
             return PollResult::Suspend;
         }
 
