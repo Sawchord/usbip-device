@@ -1,7 +1,7 @@
 use crate::{
    cmd::{
-      TransferFlags, UsbIpCmdSubmit, UsbIpCmdUnlink, UsbIpHeader, UsbIpRequest, UsbIpRequestCmd,
-      UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit, UsbIpRetUnlink,
+      Direction, TransferFlags, UsbIpCmdSubmit, UsbIpCmdUnlink, UsbIpHeader, UsbIpRequest,
+      UsbIpRequestCmd, UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit, UsbIpRetUnlink,
    },
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
    UsbIpBusInner,
@@ -132,7 +132,7 @@ impl UsbIpBusInner {
             command: 0x0003,
             seqnum: header.seqnum,
             devid: 2,
-            direction: 1,
+            direction: Direction::IN,
             ep: ep_addr as u32,
          },
          cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
@@ -277,7 +277,7 @@ impl UsbIpBusInner {
       }
 
       match header.direction {
-         0 => {
+         Direction::OUT => {
             let ep_out = ep.get_out().unwrap();
 
             // pass the data into the correct buffers
@@ -293,7 +293,7 @@ impl UsbIpBusInner {
 
             self.ack_cmd_out(header.ep, header.seqnum);
          }
-         1 => {
+         Direction::IN => {
             let ep_addr = header.ep;
             ep.pending_ins.push_back((header, cmd, data));
             self.try_send_pending(ep_addr as usize);
@@ -309,7 +309,7 @@ impl UsbIpBusInner {
             command: 0x0003,
             seqnum,
             devid: 2,
-            direction: 0,
+            direction: Direction::OUT,
             ep,
          },
          cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
@@ -359,7 +359,7 @@ impl UsbIpBusInner {
             command: 0x0004,
             seqnum,
             devid: 2,
-            direction: 0,
+            direction: Direction::OUT,
             ep,
          },
          cmd: UsbIpResponseCmd::Unlink(UsbIpRetUnlink { status: 0 }),
