@@ -58,12 +58,21 @@ pub(crate) struct Pipe {
 }
 
 impl Pipe {
-    /// Checks, wether the endpoint contains a full transaction
-    /// (terminated by a short packet) and is reay to send it.
+    /// Checks, whether the endpoint contains a full transaction
+    /// (terminated by a short packet) and is ready to send it.
     pub fn is_rts(&self) -> bool {
         match self.data.back() {
+            // If there is no data pending, we are not ready to send
             None => false,
-            Some(val) => val.len() < self.max_packet_size as usize,
+            Some(val) => {
+                if self.ty != EndpointType::Control {
+                    true
+                } else {
+                    // Control Endpoint use packet transactions.
+                    // Therefore, we must wait until a transaction is complete before we return the packets
+                    val.len() < self.max_packet_size as usize
+                }
+            }
         }
     }
 }
