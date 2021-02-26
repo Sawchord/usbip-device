@@ -144,7 +144,7 @@ impl UsbIpBusInner {
          }),
          data: out_buf,
       };
-      log::info!(
+      log::debug!(
          "header: {:?}, cmd: {:?}. data: {:?}",
          response.header,
          response.cmd,
@@ -321,7 +321,7 @@ impl UsbIpBusInner {
          }),
          data: vec![],
       };
-      log::info!(
+      log::debug!(
          "header: {:?}, cmd: {:?}. data: {:?}",
          response.header,
          response.cmd,

@@ -75,13 +75,6 @@ impl UsbIpRequest {
       reader.set_nonblocking(false)?;
 
       let header = UsbIpHeader::from_slice(&buf[0..20]);
-
-      log::debug!(
-         "received request with seqnum {} for devid {}",
-         header.seqnum,
-         header.devid
-      );
-
       match header.command {
          0x00000001 => {
             let cmd = UsbIpCmdSubmit::from_slice(&buf[20..48]);

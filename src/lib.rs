@@ -275,7 +275,7 @@ impl UsbBus for UsbIpBus {
             UsbDirection::Out => endpoint.pipe_out = Some(pipe),
         }
 
-        log::info!(
+        log::debug!(
             "initialized new endpoint {:?} as address {:?}",
             endpoint,
             endpoint_index
@@ -301,7 +301,7 @@ impl UsbBus for UsbIpBus {
     }
 
     fn write(&self, ep_addr: EndpointAddress, buf: &[u8]) -> UsbResult<usize> {
-        log::debug!("write request at endpoint {}", ep_addr.index());
+        log::trace!("write request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
 
         // We can not write anything, as long as there is no connection
@@ -364,7 +364,7 @@ impl UsbBus for UsbIpBus {
             _ => return,
         };
 
-        log::debug!(
+        log::trace!(
             "setting endpoint {:?} to stalled state {}",
             ep_addr,
             stalled
