@@ -245,7 +245,7 @@ impl UsbIpBusInner {
    }
 
    fn handle_usbip_pkg(&mut self, request: UsbIpRequest) {
-      log::info!(
+      log::debug!(
          "header: {:?}, cmd: {:?}, data: {:?}",
          request.header,
          request.cmd,
@@ -365,7 +365,7 @@ impl UsbIpBusInner {
          cmd: UsbIpResponseCmd::Unlink(UsbIpRetUnlink { status: 0 }),
          data: vec![],
       };
-      log::info!(
+      log::debug!(
          "header: {:?}, cmd: {:?}. data: {:?}",
          response.header,
          response.cmd,
