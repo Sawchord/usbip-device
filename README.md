@@ -2,7 +2,19 @@
 [2]: https://docs.rs/usb-device/0.2.7/usb_device/device/struct.UsbDevice.html
 [3]: https://docs.rs/usb-device/0.2.7/usb_device/class/trait.UsbClass.html
 
+[doc-badge]: https://docs.rs/usbip-device/badge.svg
+[doc-link]: https://docs.rs/usbip-device
+
+[crates-badge]: https://img.shields.io/crates/v/usbip-device
+[crates-link]: https://crates.io/crates/usbip-device
+
+[apache2-license]: https://spdx.org/licenses/Apache-2.0.html
+[mit-license]: https://spdx.org/licenses/MIT.htm
+
 # Usb-Hid Driver
+
+[![crates.io][crates-badge]][crates-link]
+[![Documentation][doc-badge]][doc-link]
 
 This is an implementation of [`usb-device`][1] using USBIP server.
 
@@ -49,3 +61,7 @@ usbip detach -p "port"
 This is a very alpha software, which still has a lot of quirks to be worked out.
 
 - When using HID, the connection always fails the first time and usually works the second time. It is not entirely clear, why.
+
+## License
+
+[Apache-2.0][apache2-license] or [MIT][mit-license].
