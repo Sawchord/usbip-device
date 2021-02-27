@@ -1,6 +1,6 @@
 use crate::{
    cmd::{
-      Direction, TransferFlags, UsbIpCmdSubmit, UsbIpCmdUnlink, UsbIpHeader, UsbIpRequest,
+      Direction, TransferFlags, UsbCmd, UsbIpCmdSubmit, UsbIpCmdUnlink, UsbIpHeader, UsbIpRequest,
       UsbIpRequestCmd, UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit, UsbIpRetUnlink,
    },
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
@@ -129,7 +129,7 @@ impl UsbIpBusInner {
 
       let response = UsbIpResponse {
          header: UsbIpHeader {
-            command: 0x0003,
+            command: UsbCmd::Response,
             seqnum: header.seqnum,
             devid: 2,
             direction: Direction::IN,
@@ -306,7 +306,7 @@ impl UsbIpBusInner {
    fn ack_cmd_out(&mut self, ep: u32, seqnum: u32) {
       let response = UsbIpResponse {
          header: UsbIpHeader {
-            command: 0x0003,
+            command: UsbCmd::Response,
             seqnum,
             devid: 2,
             direction: Direction::OUT,
@@ -356,7 +356,7 @@ impl UsbIpBusInner {
    fn ack_unlink(&mut self, ep: u32, seqnum: u32) {
       let response = UsbIpResponse {
          header: UsbIpHeader {
-            command: 0x0004,
+            command: UsbCmd::UnlinkResponse,
             seqnum,
             devid: 2,
             direction: Direction::OUT,
