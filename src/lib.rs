@@ -321,14 +321,19 @@ impl UsbBus for UsbIpBus {
         // Get the endpoint
         let ep = inner.get_endpoint(ep_addr.index())?;
 
-        // The transfer completes immediately, since there is no real transfer
-        ep.in_complete_flag = true;
+        // NOTE: This is a hack to allow driving the setup packets in a transactional way
+        // while the rest of the packets use packet logic
+        if ep_addr.index() == 0 {
+            ep.in_complete_flag = true;
+        }
 
         let pipe = ep.get_in()?;
 
         // If there is data waiting in the output buffer, we need to wait
         if pipe.is_rts() {
-            ep.in_complete_flag = false;
+            if ep_addr.index() == 0 {
+                ep.in_complete_flag = false;
+            }
             return Err(UsbError::WouldBlock);
         }
 

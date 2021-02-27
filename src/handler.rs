@@ -125,6 +125,9 @@ impl UsbIpBusInner {
          // }
       }
 
+      // After sending, the in_complete can be set
+      ep.in_complete_flag = true;
+
       // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
 
       let response = UsbIpResponse {
