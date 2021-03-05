@@ -1,6 +1,6 @@
 [1]: https://docs.rs/usb-device/0.2.7/usb_device/
-[2]: https://docs.rs/usb-device/0.2.7/usb_device/device/struct.UsbDevice.html
 [3]: https://docs.rs/usb-device/0.2.7/usb_device/class/trait.UsbClass.html
+[4]: https://docs.rs/usb-device/0.2.7/usb_device/bus/trait.UsbBus.html
 
 [doc-badge]: https://docs.rs/usbip-device/badge.svg
 [doc-link]: https://docs.rs/usbip-device
@@ -16,12 +16,12 @@
 [![crates.io][crates-badge]][crates-link]
 [![Documentation][doc-badge]][doc-link]
 
-This is an implementation of [`usb-device`][1] using USBIP server.
+This is an implementation of the [`UsbBus`][4] trait of [`usb-device`][1], simulating a USB device as a USBIP server.
 
 ## Note
 
 This crate is **not** intended to be used in production ever.
-It's purpose is to ease development of new [`UsbClass`][3] or [`UsbDevice`][2] implementations or to emulate USB devices for easier embedded application development.
+It's purpose is to ease development of new [`UsbClass`][3] implementation or to emulate USB devices for easier embedded application development.
 
 ## Usage
 
@@ -55,6 +55,8 @@ usbip port
 // Detach device
 usbip detach -p "port"
 ```
+
+Depending on you machine setup, you might need do `sudo`.
 
 ## Known Bugs
 
