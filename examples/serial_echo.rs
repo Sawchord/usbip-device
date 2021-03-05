@@ -1,3 +1,8 @@
+//! This example registers an ACM device, which can be connected
+//! too using a serial terminal program, e.g. `screen`.
+//! All printable characters are sent back, therefore, this program acts
+//! as a serial echo.
+
 use usb_device::{bus::UsbBusAllocator, prelude::*};
 use usbd_serial::{SerialPort, USB_CLASS_CDC};
 use usbip_device::UsbIpBus;

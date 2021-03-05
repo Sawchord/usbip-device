@@ -1,3 +1,6 @@
+//! This example registers a mouse as a HID device and then moves the
+//! cursor down every couple of seconds.
+
 use usb_device::{bus::UsbBusAllocator, prelude::*};
 use usbd_hid::{
    descriptor::{generator_prelude::*, MouseReport},
