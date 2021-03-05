@@ -150,6 +150,24 @@ pub(crate) struct UsbIpBusInner {
 }
 
 impl UsbIpBusInner {
+    /// Creates a new UsbIpBusInner
+    fn new() -> Self {
+        Self {
+            handler: SocketHandler::new(),
+            endpoint: <[Endpoint; NUM_ENDPOINTS]>::default(),
+            device_address: 0,
+            reset: true,
+            suspended: false,
+        }
+    }
+
+    /// Resets the handler to the state, in which it acts like it is new
+    fn reset(&mut self) {
+        self.endpoint = <[Endpoint; NUM_ENDPOINTS]>::default();
+        self.reset = true;
+        self.suspended = false;
+    }
+
     /// Returns the first enpoint, that is not already initialized or `None`,
     /// if all are already in use.
     fn next_available_endpoint(&self, direction: UsbDirection) -> Option<usize> {
@@ -217,17 +235,17 @@ impl UsbIpBus {
     /// # Panics
     /// If port 3240 is already in use.
     pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(UsbIpBusInner {
-            handler: SocketHandler::new(),
-            endpoint: <[Endpoint; NUM_ENDPOINTS]>::default(),
-            device_address: 0,
-            reset: true,
-            suspended: false,
-        })))
+        Self(Arc::new(Mutex::new(UsbIpBusInner::new())))
     }
 
     fn lock(&self) -> MutexGuard<UsbIpBusInner> {
         self.0.lock().unwrap()
+    }
+}
+
+impl Default for UsbIpBus {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -298,8 +316,15 @@ impl UsbBus for UsbIpBus {
     }
 
     fn reset(&self) {
-        // TODO: Delete content of all endpoints and unstall them
-        log::trace!("usb device is being reset");
+        let mut inner = self.lock();
+
+        // Skip if we are already in reset state
+        if inner.reset {
+            return;
+        }
+
+        inner.reset();
+        log::debug!("usb device is being reset");
     }
 
     fn set_device_address(&self, addr: u8) {

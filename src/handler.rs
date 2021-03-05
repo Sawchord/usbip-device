@@ -18,9 +18,11 @@ pub struct SocketHandler {
    connection: Option<TcpStream>,
 }
 
-const DEVICE_SPEED: u32 = 2;
+// TODO: Allow settable device speed
+const DEVICE_SPEED: u32 = 3;
 
 impl SocketHandler {
+   /// Create a new handler
    pub fn new() -> Self {
       let listener = TcpListener::bind(("127.0.0.1", 3240)).unwrap();
       listener.set_nonblocking(true).unwrap();
