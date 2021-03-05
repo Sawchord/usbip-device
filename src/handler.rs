@@ -18,7 +18,7 @@ pub struct SocketHandler {
    connection: Option<TcpStream>,
 }
 
-const DEVICE_SPEED: u32 = 1;
+const DEVICE_SPEED: u32 = 2;
 
 impl SocketHandler {
    pub fn new() -> Self {

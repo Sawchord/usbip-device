@@ -378,11 +378,13 @@ impl UsbBus for UsbIpBus {
             _ => return,
         };
 
-        log::trace!(
-            "setting endpoint {:?} to stalled state {}",
-            ep_addr,
-            stalled
-        );
+        if endpoint.stalled != stalled {
+            log::debug!(
+                "setting endpoint {:?} to stalled state {}",
+                ep_addr,
+                stalled
+            );
+        }
         endpoint.stalled = stalled;
     }
 
