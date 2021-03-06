@@ -48,13 +48,24 @@ impl UsbIpResponse {
    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UsbIpRetSubmit {
    pub status: i32,
    pub actual_length: i32,
    pub start_frame: i32,
    pub number_of_packets: i32,
    pub error_count: i32,
+}
+
+impl Debug for UsbIpRetSubmit {
+   /// As `start_frame`, `number_of_packets` and `error_count` are unused as of now,
+   /// they are not being printed
+   fn fmt(&self, f: &mut Formatter) -> FmtResult {
+      f.debug_struct("UsbIpRetSubmit")
+         .field("status", &self.status)
+         .field("actual_length", &self.actual_length)
+         .finish()
+   }
 }
 
 impl UsbIpRetSubmit {

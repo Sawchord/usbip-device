@@ -1,6 +1,6 @@
 use crate::{
    cmd::{Direction, TransferFlags, UsbCmd, UsbIpHeader},
-   debug::DbgBuf,
+   debug::{DbgBuf, DbgEmpty},
    UsbIpError,
 };
 use std::{
@@ -98,7 +98,7 @@ impl UsbIpRequest {
    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UsbIpCmdSubmit {
    pub transfer_flags: TransferFlags,
    pub transfer_buffer_length: i32,
@@ -106,6 +106,26 @@ pub struct UsbIpCmdSubmit {
    pub number_of_packets: i32,
    pub interval: i32,
    pub setup: [u8; 8],
+}
+
+impl Debug for UsbIpCmdSubmit {
+   /// As `start_frame`, `number_of_packets` and `interval` are unused as of now,
+   /// they are not being printed
+   fn fmt(&self, f: &mut Formatter) -> FmtResult {
+      // Only output setup bytes, if they are relevant
+      let setup_dbg = DbgBuf(&self.setup);
+      let setup: &dyn Debug = if self.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
+         &setup_dbg
+      } else {
+         &DbgEmpty
+      };
+
+      f.debug_struct("UsbIpCmdSubmit")
+         .field("transfer_flags", &self.transfer_flags)
+         .field("transfer_buffer_length", &self.transfer_buffer_length)
+         .field("setup", &setup)
+         .finish()
+   }
 }
 
 impl UsbIpCmdSubmit {
