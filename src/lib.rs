@@ -2,11 +2,9 @@ pub(crate) mod cmd;
 pub(crate) mod debug;
 pub(crate) mod handler;
 pub(crate) mod op;
+pub(crate) mod request;
 
-use crate::{
-    cmd::{UsbIpCmdSubmit, UsbIpHeader},
-    handler::SocketHandler,
-};
+use crate::{cmd::UsbIpHeader, handler::SocketHandler, request::UsbIpCmdSubmit};
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex, MutexGuard},
