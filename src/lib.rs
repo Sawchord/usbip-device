@@ -3,6 +3,7 @@ pub(crate) mod debug;
 pub(crate) mod handler;
 pub(crate) mod op;
 pub(crate) mod request;
+pub(crate) mod response;
 
 use crate::{cmd::UsbIpHeader, handler::SocketHandler, request::UsbIpCmdSubmit};
 use std::{

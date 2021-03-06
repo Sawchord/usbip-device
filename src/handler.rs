@@ -1,10 +1,8 @@
 use crate::{
-   cmd::{
-      Direction, TransferFlags, UsbCmd, UsbIpHeader, UsbIpResponse, UsbIpResponseCmd,
-      UsbIpRetSubmit, UsbIpRetUnlink,
-   },
+   cmd::{Direction, TransferFlags, UsbCmd, UsbIpHeader},
    op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
    request::{UsbIpCmdSubmit, UsbIpCmdUnlink, UsbIpRequest, UsbIpRequestCmd},
+   response::{UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit, UsbIpRetUnlink},
    UsbIpBusInner,
 };
 use std::{
