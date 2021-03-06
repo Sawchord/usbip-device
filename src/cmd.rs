@@ -1,6 +1,7 @@
-use crate::UsbIpError;
+use crate::{debug::DbgBuf, UsbIpError};
 use std::{
    convert::TryInto,
+   fmt::{Debug, Formatter, Result as FmtResult},
    io::{Error, ErrorKind, Read},
    net::TcpStream,
 };
@@ -70,11 +71,21 @@ impl UsbIpHeader {
    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UsbIpRequest {
    pub header: UsbIpHeader,
    pub cmd: UsbIpRequestCmd,
    pub data: Vec<u8>,
+}
+
+impl Debug for UsbIpRequest {
+   fn fmt(&self, f: &mut Formatter) -> FmtResult {
+      f.debug_struct("UsbIpResponse")
+         .field("header", &self.header)
+         .field("cmd", &self.cmd)
+         .field("data", &DbgBuf(&self.data))
+         .finish()
+   }
 }
 
 #[derive(Debug, Clone)]
@@ -206,11 +217,21 @@ impl UsbIpCmdUnlink {
 }
 
 // TODO: Make header command field unsettable and set it by cmd
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UsbIpResponse {
    pub header: UsbIpHeader,
    pub cmd: UsbIpResponseCmd,
    pub data: Vec<u8>,
+}
+
+impl Debug for UsbIpResponse {
+   fn fmt(&self, f: &mut Formatter) -> FmtResult {
+      f.debug_struct("UsbIpResponse")
+         .field("header", &self.header)
+         .field("cmd", &self.cmd)
+         .field("data", &DbgBuf(&self.data))
+         .finish()
+   }
 }
 
 #[derive(Debug, Clone)]

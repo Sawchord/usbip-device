@@ -1,4 +1,5 @@
 pub(crate) mod cmd;
+pub(crate) mod debug;
 pub(crate) mod handler;
 pub(crate) mod op;
 
