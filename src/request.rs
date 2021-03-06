@@ -19,7 +19,7 @@ pub struct UsbIpRequest {
 
 impl Debug for UsbIpRequest {
    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-      f.debug_struct("UsbIpResponse")
+      f.debug_struct("UsbIpRequest")
          .field("header", &self.header)
          .field("cmd", &self.cmd)
          .field("data", &DbgBuf(&self.data))
