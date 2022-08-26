@@ -285,7 +285,7 @@ impl UsbIpBusInner {
                ep_out.data.push_back(vec![]);
             }
 
-            self.ack_cmd_out(header.ep, header.seqnum);
+            self.ack_cmd_out(header.ep, header.seqnum, data.len());
          }
          Direction::IN => {
             let ep_addr = header.ep;
@@ -297,7 +297,7 @@ impl UsbIpBusInner {
    }
 
    /// Send an acknowledgement after recieving a cmd out package.
-   fn ack_cmd_out(&mut self, ep: u32, seqnum: u32) {
+   fn ack_cmd_out(&mut self, ep: u32, seqnum: u32, len: usize) {
       let response = UsbIpResponse {
          header: UsbIpHeader {
             command: UsbCmd::Response,
@@ -308,7 +308,7 @@ impl UsbIpBusInner {
          },
          cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
             status: 0,
-            actual_length: 0,
+            actual_length: len as i32,
             start_frame: 0,
             number_of_packets: 0,
             error_count: 0,
