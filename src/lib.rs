@@ -54,6 +54,7 @@ pub(crate) struct Pipe {
     pub data: VecDeque<Vec<u8>>,
     pub ty: EndpointType,
     pub max_packet_size: u16,
+    #[allow(dead_code)]
     pub interval: u8,
 }
 
