@@ -1,7 +1,7 @@
 //! This example registers a mouse as a HID device and then moves the
 //! cursor down every couple of seconds.
 
-use usb_device::{bus::UsbBusAllocator, prelude::*};
+use usb_device::{bus::UsbBusAllocator, device::StringDescriptors, prelude::*};
 use usbd_hid::{
     descriptor::{generator_prelude::*, MouseReport},
     hid_class::HIDClass,
@@ -16,9 +16,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bus_allocator = UsbBusAllocator::new(UsbIpBus::new());
     let mut usb_hid = HIDClass::new(&bus_allocator, MouseReport::desc(), 5);
     let mut usb_bus = UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x27dd))
-        .manufacturer("Fake company")
-        .product("Twitchy Mousey")
-        .serial_number("TEST")
+        .strings(&[StringDescriptors::new(usb_device::LangID::EN)
+            .manufacturer("Fake company")
+            .product("Twitchy Mousey")
+            .serial_number("TEST")])
+        .unwrap()
         .device_class(0xEF)
         .build();
 

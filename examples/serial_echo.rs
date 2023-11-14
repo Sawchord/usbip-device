@@ -3,7 +3,7 @@
 //! All printable characters are sent back, therefore, this program acts
 //! as a serial echo.
 
-use usb_device::{bus::UsbBusAllocator, prelude::*};
+use usb_device::{bus::UsbBusAllocator, device::StringDescriptors, prelude::*};
 use usbd_serial::{SerialPort, USB_CLASS_CDC};
 use usbip_device::UsbIpBus;
 
@@ -15,9 +15,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bus_allocator = UsbBusAllocator::new(UsbIpBus::new());
     let mut usb_serial = SerialPort::new(&bus_allocator);
     let mut usb_bus = UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x27dd))
-        .manufacturer("Fake company")
-        .product("Serial port")
-        .serial_number("TEST")
+        .strings(&[StringDescriptors::new(usb_device::LangID::EN)
+            .manufacturer("Fake company")
+            .product("Serial port")
+            .serial_number("TEST")])
+        .unwrap()
         .device_class(USB_CLASS_CDC)
         .build();
 
