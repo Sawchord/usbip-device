@@ -1,6 +1,6 @@
 [package]
 name = "usbip-device"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Leon Tan <leon.arian.tan@gmail.com>"]
 edition = "2018"
 readme = "README.md"
