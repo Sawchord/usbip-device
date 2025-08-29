@@ -148,6 +148,8 @@ pub(crate) struct UsbIpBusInner {
     pub device_address: u8,
     pub reset: bool,
     pub suspended: bool,
+    /// Whether a zero-length write on EP 0 is considered a status stage.
+    pub out_ack: bool,
 }
 
 impl UsbIpBusInner {
@@ -159,6 +161,7 @@ impl UsbIpBusInner {
             device_address: 0,
             reset: true,
             suspended: false,
+            out_ack: false,
         }
     }
 
@@ -344,7 +347,8 @@ impl UsbBus for UsbIpBus {
             return Err(UsbError::WouldBlock);
         }
 
-        // Get the endpoint
+        // Get the endpoint (and out_ack field for borrowing reasons)
+        let out_ack = inner.out_ack;
         let ep = inner.get_endpoint(ep_addr.index())?;
 
         // NOTE: This is a hack to allow driving the setup packets in a transactional way
@@ -363,6 +367,11 @@ impl UsbBus for UsbIpBus {
             return Err(UsbError::WouldBlock);
         }
 
+        // Only push the packet if we're not expecting a zero-length write on EP 0
+        if ep_addr.index() == 0 && buf.is_empty() && out_ack {
+            inner.out_ack = false;
+            return Ok(0);
+        }
         pipe.data.push_back(buf.to_vec());
 
         // we attempt to service in packets, if we have them available
