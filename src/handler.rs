@@ -314,6 +314,7 @@ impl UsbIpBusInner {
         };
         log::debug!("{:?}", response);
 
+        self.out_ack = true;
         self.handler
             .connection
             .as_mut()
