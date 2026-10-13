@@ -1,15 +1,16 @@
 pub(crate) mod cmd;
 pub(crate) mod debug;
+pub(crate) mod endpoint;
 pub(crate) mod handler;
 pub(crate) mod op;
 pub(crate) mod request;
 pub(crate) mod response;
 
-use crate::{cmd::UsbIpHeader, handler::SocketHandler, request::UsbIpCmdSubmit};
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex, MutexGuard},
+use crate::{
+    endpoint::{ControlPipe, InPipe, OutPipe, PacketKind},
+    handler::SocketHandler,
 };
+use std::sync::{Arc, Mutex, MutexGuard};
 use usb_device::{
     Result as UsbResult, UsbDirection, UsbError,
     {
@@ -49,102 +50,12 @@ impl std::error::Error for UsbIpError {}
 
 const NUM_ENDPOINTS: usize = 8;
 
-#[derive(Debug, Clone)]
-pub(crate) struct Pipe {
-    pub data: VecDeque<Vec<u8>>,
-    pub ty: EndpointType,
-    pub max_packet_size: u16,
-    #[allow(dead_code)]
-    pub interval: u8,
-}
-
-impl Pipe {
-    /// Checks, whether the endpoint contains a full transaction
-    /// (terminated by a short packet) and is ready to send it.
-    pub fn is_rts(&self) -> bool {
-        match self.data.back() {
-            // If there is no data pending, we are not ready to send
-            None => false,
-            Some(val) => {
-                if self.ty != EndpointType::Control {
-                    true
-                } else {
-                    // Control Endpoint use packet transactions.
-                    // Therefore, we must wait until a transaction is complete before we return the packets
-                    val.len() < self.max_packet_size as usize
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Endpoint {
-    pub(crate) pipe_in: Option<Pipe>,
-    pub(crate) pipe_out: Option<Pipe>,
-    pub(crate) pending_ins: VecDeque<(UsbIpHeader, UsbIpCmdSubmit, Vec<u8>)>,
-    pub(crate) stalled: bool,
-    pub(crate) setup_flag: bool,
-    pub(crate) in_complete_flag: bool,
-}
-
-impl Default for Endpoint {
-    fn default() -> Self {
-        Self {
-            pipe_in: None,
-            pipe_out: None,
-            pending_ins: VecDeque::new(),
-            stalled: true,
-            setup_flag: false,
-            in_complete_flag: false,
-        }
-    }
-}
-
-impl Endpoint {
-    /// Returns the input pipe of this endpoint
-    fn get_in(&mut self) -> UsbResult<&mut Pipe> {
-        self.pipe_in.as_mut().ok_or(UsbError::InvalidEndpoint)
-    }
-
-    /// Returns the output pipe of this endpoint
-    fn get_out(&mut self) -> UsbResult<&mut Pipe> {
-        self.pipe_out.as_mut().ok_or(UsbError::InvalidEndpoint)
-    }
-
-    /// Checks, whether the input pipe is ready to send data back to the host.
-    fn is_rts(&self) -> bool {
-        match self.pipe_in {
-            None => false,
-            Some(ref pipe) => pipe.is_rts(),
-        }
-    }
-
-    /// Processes an unlink and removes the pending packet on this endpoint.
-    ///
-    /// # Returns
-    /// - `true` if pending urb was removed
-    /// - `false` if it was not found
-    // NOTE: This is super inefficient, use linked lists, as soon as linked_list_remove stabilizes
-    fn unlink(&mut self, seqnum: u32) -> bool {
-        let old_len = self.pending_ins.len();
-
-        self.pending_ins = self
-            .pending_ins
-            .drain(..)
-            .filter(|(header, _, _)| header.seqnum != seqnum)
-            .collect();
-
-        // If the length is the same as before, we have not changed anything
-        // and return false
-        old_len != self.pending_ins.len()
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct UsbIpBusInner {
     pub handler: SocketHandler,
-    pub endpoint: [Endpoint; NUM_ENDPOINTS],
+    pub control: Option<ControlPipe>,
+    pub ins: [Option<InPipe>; NUM_ENDPOINTS],
+    pub outs: [Option<OutPipe>; NUM_ENDPOINTS],
     pub device_address: u8,
     pub reset: bool,
     pub suspended: bool,
@@ -155,69 +66,71 @@ impl UsbIpBusInner {
     fn new() -> Self {
         Self {
             handler: SocketHandler::new(),
-            endpoint: <[Endpoint; NUM_ENDPOINTS]>::default(),
+            control: None,
+            ins: Default::default(),
+            outs: Default::default(),
             device_address: 0,
             reset: true,
             suspended: false,
         }
     }
 
-    /// Resets the handler to the state, in which it acts like it is new
-    fn reset(&mut self) {
-        self.endpoint = <[Endpoint; NUM_ENDPOINTS]>::default();
-        self.reset = true;
-        self.suspended = false;
+    /// Drops every transfer in flight, keeping the endpoints as allocated
+    fn clear_transfers(&mut self) {
+        self.control.iter_mut().for_each(ControlPipe::clear);
+        self.ins.iter_mut().flatten().for_each(InPipe::clear);
+        self.outs.iter_mut().flatten().for_each(OutPipe::clear);
     }
 
-    /// Returns the first enpoint, that is not already initialized or `None`,
-    /// if all are already in use.
+    /// Returns the first endpoint number that is free in the given direction
     fn next_available_endpoint(&self, direction: UsbDirection) -> Option<usize> {
-        match direction {
-            UsbDirection::In => {
-                for i in 1..NUM_ENDPOINTS {
-                    if self.endpoint[i].pipe_in.is_none() {
-                        return Some(i);
-                    }
-                }
-            }
-            UsbDirection::Out => {
-                for i in 1..NUM_ENDPOINTS {
-                    if self.endpoint[i].pipe_out.is_none() {
-                        return Some(i);
-                    }
-                }
-            }
-        }
-
-        None
+        (1..NUM_ENDPOINTS).find(|&i| match direction {
+            UsbDirection::In => self.ins[i].is_none(),
+            UsbDirection::Out => self.outs[i].is_none(),
+        })
     }
 
-    /// Returns the requested endpoint if it exists and
-    /// [`UsbError::InvalidEndpoint`] otherwise.
-    fn get_endpoint(&mut self, ep: usize) -> UsbResult<&mut Endpoint> {
-        //let ep_addr = ep.index();
-
-        if ep >= NUM_ENDPOINTS {
-            log::error!("attempt to access out-of-bounds endpoint {:?}", ep);
-            return Err(UsbError::InvalidEndpoint);
-        }
-
-        Ok(&mut self.endpoint[ep])
+    fn control(&mut self) -> UsbResult<&mut ControlPipe> {
+        self.control.as_mut().ok_or(UsbError::InvalidEndpoint)
     }
 
-    /// Processes an unlink and removes the pending packet.
-    ///
-    /// # Returns
-    /// - `true` if pending urb was removed
-    /// - `false` if it was not found
+    fn pipe_in(&mut self, index: usize) -> UsbResult<&mut InPipe> {
+        self.ins
+            .get_mut(index)
+            .and_then(Option::as_mut)
+            .ok_or(UsbError::InvalidEndpoint)
+    }
+
+    fn pipe_out(&mut self, index: usize) -> UsbResult<&mut OutPipe> {
+        self.outs
+            .get_mut(index)
+            .and_then(Option::as_mut)
+            .ok_or(UsbError::InvalidEndpoint)
+    }
+
+    fn is_stalled(&mut self, ep_addr: EndpointAddress) -> bool {
+        match (ep_addr.index(), ep_addr.direction()) {
+            (0, _) => self.control().is_ok_and(|control| control.is_stalled()),
+            (index, UsbDirection::In) => self.pipe_in(index).is_ok_and(|pipe| pipe.is_stalled()),
+            (index, UsbDirection::Out) => self.pipe_out(index).is_ok_and(|pipe| pipe.is_stalled()),
+        }
+    }
+
+    /// Removes a URB the host gave up on, returning whether it was still pending
     fn unlink(&mut self, seqnum: u32) -> bool {
-        for i in 0..NUM_ENDPOINTS {
-            if self.endpoint[i].unlink(seqnum) {
-                return true;
-            }
-        }
-
-        false
+        self.control
+            .iter_mut()
+            .any(|control| control.unlink(seqnum))
+            || self
+                .ins
+                .iter_mut()
+                .flatten()
+                .any(|pipe| pipe.unlink(seqnum))
+            || self
+                .outs
+                .iter_mut()
+                .flatten()
+                .any(|pipe| pipe.unlink(seqnum))
     }
 }
 
@@ -261,55 +174,42 @@ impl UsbBus for UsbIpBus {
     ) -> UsbResult<EndpointAddress> {
         let mut inner = self.lock();
 
-        // Get the endpoint to initialize
-        let endpoint_index = match ep_addr {
-            Some(addr) => {
-                if addr.index() < NUM_ENDPOINTS {
-                    addr.index()
-                } else {
-                    return Err(UsbError::InvalidEndpoint);
-                }
-            }
+        let index = match ep_addr {
+            Some(addr) if addr.index() < NUM_ENDPOINTS => addr.index(),
+            Some(_) => return Err(UsbError::InvalidEndpoint),
             None => inner
                 .next_available_endpoint(ep_dir)
                 .ok_or(UsbError::EndpointMemoryOverflow)?,
         };
 
-        let endpoint = &mut inner.endpoint[endpoint_index as usize];
-
-        // check endpoint allocation here
-        let maybe_pipe = match ep_dir {
-            UsbDirection::In => endpoint.get_in(),
-            UsbDirection::Out => endpoint.get_out(),
-        };
-
-        // we want to get an invalid enpoint, otherwise the requested endpoint
-        // was already allocated
-        match maybe_pipe {
-            Err(UsbError::InvalidEndpoint) => (),
-            Ok(_) => return Err(UsbError::InvalidEndpoint),
-            Err(_) => return Err(UsbError::InvalidEndpoint),
-        }
-
-        // initialize the endpoint
-        let pipe = Pipe {
-            data: VecDeque::new(),
-            ty: ep_type,
-            max_packet_size,
-            interval,
-        };
-        match ep_dir {
-            UsbDirection::In => endpoint.pipe_in = Some(pipe),
-            UsbDirection::Out => endpoint.pipe_out = Some(pipe),
+        // Endpoint 0 is the one control endpoint, and both of its halves share one pipe
+        match (ep_type, index) {
+            (EndpointType::Control, 0) => {
+                if inner.control.is_none() {
+                    inner.control = Some(ControlPipe::new(max_packet_size));
+                }
+            }
+            (EndpointType::Control, _) | (_, 0) => return Err(UsbError::InvalidEndpoint),
+            _ => match ep_dir {
+                UsbDirection::In if inner.ins[index].is_none() => {
+                    inner.ins[index] = Some(InPipe::new(max_packet_size))
+                }
+                UsbDirection::Out if inner.outs[index].is_none() => {
+                    inner.outs[index] = Some(OutPipe::new(max_packet_size))
+                }
+                _ => return Err(UsbError::InvalidEndpoint),
+            },
         }
 
         log::debug!(
-            "initialized new endpoint {:?} as address {:?}",
-            endpoint,
-            endpoint_index
+            "initialized endpoint {} {:?} as {:?} with interval {}",
+            index,
+            ep_dir,
+            ep_type,
+            interval
         );
 
-        Ok(EndpointAddress::from_parts(endpoint_index as usize, ep_dir))
+        Ok(EndpointAddress::from_parts(index, ep_dir))
     }
 
     fn enable(&mut self) {
@@ -319,13 +219,9 @@ impl UsbBus for UsbIpBus {
     fn reset(&self) {
         let mut inner = self.lock();
 
-        // Skip if we are already in reset state
-        if inner.reset {
-            return;
-        }
-
-        inner.reset();
-        log::debug!("usb device is being reset");
+        log::trace!("usb device is being reset");
+        inner.clear_transfers();
+        inner.suspended = false;
     }
 
     fn set_device_address(&self, addr: u8) {
@@ -344,31 +240,11 @@ impl UsbBus for UsbIpBus {
             return Err(UsbError::WouldBlock);
         }
 
-        // Get the endpoint
-        let ep = inner.get_endpoint(ep_addr.index())?;
-
-        // NOTE: This is a hack to allow driving the setup packets in a transactional way
-        // while the rest of the packets use packet logic
-        if ep_addr.index() == 0 {
-            ep.in_complete_flag = true;
-        }
-
-        let pipe = ep.get_in()?;
-
-        // If there is data waiting in the output buffer, we need to wait
-        if pipe.is_rts() {
-            if ep_addr.index() == 0 {
-                ep.in_complete_flag = false;
-            }
-            return Err(UsbError::WouldBlock);
-        }
-
-        pipe.data.push_back(buf.to_vec());
-
-        // we attempt to service in packets, if we have them available
-        if pipe.is_rts() {
-            inner.try_send_pending(ep_addr.index());
-        }
+        let completion = match ep_addr.index() {
+            0 => inner.control()?.write(buf)?,
+            index => inner.pipe_in(index)?.write(buf)?,
+        };
+        inner.send(completion);
 
         Ok(buf.len())
     }
@@ -376,53 +252,47 @@ impl UsbBus for UsbIpBus {
     fn read(&self, ep_addr: EndpointAddress, buf: &mut [u8]) -> UsbResult<usize> {
         log::trace!("read request at endpoint {}", ep_addr.index());
         let mut inner = self.lock();
-        let ep = inner.get_endpoint(ep_addr.index())?;
-        let pipe = ep.get_out()?;
 
-        // Try to get data
-        let data = match pipe.data.pop_front() {
-            None => {
-                log::trace!("no data available at endpoint");
-                return Err(UsbError::WouldBlock);
+        match ep_addr.index() {
+            0 => inner.control()?.read(buf),
+            index => {
+                let (result, completion) = inner.pipe_out(index)?.read(buf);
+                inner.send(completion);
+                result
             }
-            Some(data) => data,
-        };
-
-        if buf.len() < data.len() {
-            buf.copy_from_slice(&data[..buf.len()]);
-        } else {
-            buf[..data.len()].copy_from_slice(&data);
         }
-        Ok(data.len())
     }
 
     fn set_stalled(&self, ep_addr: EndpointAddress, stalled: bool) {
         let mut inner = self.lock();
 
-        let endpoint = match inner.get_endpoint(ep_addr.index()) {
-            Ok(endpoint) => endpoint,
-            _ => return,
-        };
-
-        if endpoint.stalled != stalled {
+        if stalled != inner.is_stalled(ep_addr) {
             log::debug!(
                 "setting endpoint {:?} to stalled state {}",
                 ep_addr,
                 stalled
             );
         }
-        endpoint.stalled = stalled;
+
+        let completions = match (ep_addr.index(), ep_addr.direction()) {
+            (0, _) => inner
+                .control()
+                .map(|control| control.set_stalled(stalled).into_iter().collect())
+                .unwrap_or_default(),
+            (index, UsbDirection::In) => inner
+                .pipe_in(index)
+                .map(|pipe| pipe.set_stalled(stalled))
+                .unwrap_or_default(),
+            (index, UsbDirection::Out) => inner
+                .pipe_out(index)
+                .map(|pipe| pipe.set_stalled(stalled))
+                .unwrap_or_default(),
+        };
+        inner.send(completions);
     }
 
     fn is_stalled(&self, ep_addr: EndpointAddress) -> bool {
-        let mut inner = self.lock();
-
-        let endpoint = match inner.get_endpoint(ep_addr.index()) {
-            Ok(endpoint) => endpoint,
-            _ => return false,
-        };
-
-        endpoint.stalled
+        self.lock().is_stalled(ep_addr)
     }
 
     fn suspend(&self) {
@@ -463,38 +333,31 @@ impl UsbBus for UsbIpBus {
             return PollResult::Suspend;
         }
 
-        let mut ep_in: u16 = 0;
+        let mut ep_in_complete: u16 = 0;
         let mut ep_out: u16 = 0;
         let mut ep_setup: u16 = 0;
 
-        for i in (0..NUM_ENDPOINTS).into_iter().rev() {
-            ep_in <<= 1;
-            ep_out <<= 1;
-            ep_setup <<= 1;
-
-            let ep = &mut inner.endpoint[i];
-
-            // Check for pending output
-            if let Some(ref pipe) = ep.pipe_out {
-                if !pipe.data.is_empty() {
-                    ep_out |= 1;
-                }
+        if let Some(control) = inner.control.as_mut() {
+            ep_in_complete |= control.take_sent() as u16;
+            match control.next_packet() {
+                Some(PacketKind::Setup) => ep_setup |= 1,
+                Some(PacketKind::Data) => ep_out |= 1,
+                None => {}
             }
+        }
 
-            if ep.in_complete_flag {
-                ep.in_complete_flag = false;
-                ep_in |= 1;
+        for i in 1..NUM_ENDPOINTS {
+            if let Some(pipe) = inner.outs[i].as_ref() {
+                ep_out |= (pipe.has_packet() as u16) << i;
             }
-
-            if ep.setup_flag {
-                ep.setup_flag = false;
-                ep_setup |= 1;
+            if let Some(pipe) = inner.ins[i].as_mut() {
+                ep_in_complete |= (pipe.take_sent() as u16) << i;
             }
         }
 
         PollResult::Data {
             ep_out,
-            ep_in_complete: ep_in,
+            ep_in_complete,
             ep_setup,
         }
     }

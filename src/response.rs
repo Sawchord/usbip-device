@@ -84,7 +84,7 @@ impl UsbIpRetSubmit {
 
 #[derive(Debug, Clone)]
 pub struct UsbIpRetUnlink {
-    pub status: u32,
+    pub status: i32,
 }
 
 impl UsbIpRetUnlink {

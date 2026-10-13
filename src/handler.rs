@@ -1,5 +1,6 @@
 use crate::{
     cmd::{Direction, TransferFlags, UsbCmd, UsbIpHeader},
+    endpoint::{Completion, Urb, ECONNRESET},
     op::{OpDeviceDescriptor, OpInterfaceDescriptor, OpRequest, OpResponse, OpResponseCommand},
     request::{UsbIpCmdSubmit, UsbIpCmdUnlink, UsbIpRequest, UsbIpRequestCmd},
     response::{UsbIpResponse, UsbIpResponseCmd, UsbIpRetSubmit, UsbIpRetUnlink},
@@ -9,7 +10,6 @@ use std::{
     io::{ErrorKind, Write},
     net::{TcpListener, TcpStream},
 };
-use usb_device::{endpoint::EndpointType, UsbError};
 
 #[derive(Debug)]
 pub struct SocketHandler {
@@ -43,6 +43,9 @@ impl UsbIpBusInner {
             None => match self.handler.listener.accept() {
                 Ok((connection, addr)) => {
                     log::info!("new connection from: {}", addr);
+                    // Replies often go out back to back, which Nagle's algorithm would hold
+                    // until the host acknowledges the first
+                    connection.set_nodelay(true).ok();
                     self.handler.connection = Some(connection)
                 }
                 Err(err) if err.kind() == ErrorKind::WouldBlock => (),
@@ -58,8 +61,8 @@ impl UsbIpBusInner {
                         let op = match OpRequest::read(stream) {
                             Ok(op) => op,
                             Err(err) if err.kind() == ErrorKind::WouldBlock => return,
-                            Err(err) if err.kind() == ErrorKind::NotConnected => {
-                                self.handler.connection = None;
+                            Err(err) if is_disconnect(&err) => {
+                                self.disconnect();
                                 return;
                             }
                             Err(err) => panic!("unexpected error {}", err),
@@ -71,10 +74,8 @@ impl UsbIpBusInner {
                         let cmd = match UsbIpRequest::read(stream) {
                             Ok(cmd) => cmd,
                             Err(err) if err.kind() == ErrorKind::WouldBlock => return,
-                            Err(err) if err.kind() == ErrorKind::NotConnected => {
-                                // If the connection is no longer connected, return to initial state
-                                self.reset = true;
-                                self.handler.connection = None;
+                            Err(err) if is_disconnect(&err) => {
+                                self.disconnect();
                                 return;
                             }
                             Err(err) => panic!("unexpected error {}", err),
@@ -86,76 +87,55 @@ impl UsbIpBusInner {
         }
     }
 
-    pub fn try_send_pending(&mut self, ep_addr: usize) {
-        let ep = match self.get_endpoint(ep_addr) {
-            Ok(ep) => ep,
-            Err(_) => return,
-        };
+    /// Answers finished URBs
+    pub fn send(&mut self, completions: impl IntoIterator<Item = Completion>) {
+        for completion in completions {
+            let response = UsbIpResponse {
+                header: UsbIpHeader {
+                    command: UsbCmd::Response,
+                    seqnum: completion.seqnum,
+                    devid: 2,
+                    direction: if completion.dir_in {
+                        Direction::IN
+                    } else {
+                        Direction::OUT
+                    },
+                    ep: completion.ep,
+                },
+                cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
+                    status: completion.status,
+                    actual_length: completion.actual_length as i32,
+                    start_frame: 0,
+                    number_of_packets: 0,
+                    error_count: 0,
+                }),
+                data: completion.data,
+            };
+            log::debug!("{:?}", response);
+            self.reply(&response.to_vec().unwrap());
+        }
+    }
 
-        if !ep.is_rts() {
+    /// Writes a reply to the host, if it is still there
+    fn reply(&mut self, bytes: &[u8]) {
+        // The host is gone, and with it everything it was waiting on
+        let Some(connection) = self.handler.connection.as_mut() else {
             return;
+        };
+        // Reads leave the socket non-blocking, but a reply must go out whole
+        let result = connection
+            .set_nonblocking(false)
+            .and_then(|()| connection.write_all(bytes));
+        if let Err(err) = result {
+            log::info!("connection lost: {}", err);
+            self.disconnect();
         }
+    }
 
-        let (header, _cmd, _) = match ep.pending_ins.pop_front() {
-            Some(urb) => urb,
-            None => return,
-        };
-        //let bytes_requested = cmd.transfer_buffer_length;
-
-        let ep_in = match ep.get_in() {
-            Ok(ep_in) => ep_in,
-            Err(UsbError::InvalidEndpoint) => return,
-            Err(e) => panic!("unexpected error {:?} while processing in packet", e),
-        };
-
-        // Read data from the packet buffer into the output buffer
-        // We must be careful to not send more bytes than requested
-        // FIXME: Fix this up so it supports transfer_buffers smaller than waiting data
-        let mut out_buf = vec![];
-        while let Some(data) = ep_in.data.pop_front() {
-            //let bytes_left = bytes_requested as usize - out_buf.len();
-            //let bytes_to_read = usize::min(data.len(), bytes_left);
-
-            //out_buf.extend_from_slice(&data[..bytes_to_read]);
-            out_buf.extend_from_slice(&data);
-
-            // if bytes_to_read != data.len() {
-            //    assert_eq!(out_buf.len(), bytes_requested as usize);
-            //    ep_in.data.push_front(data[bytes_to_read..].to_vec());
-            //    break;
-            // }
-        }
-
-        // After sending, the in_complete can be set
-        ep.in_complete_flag = true;
-
-        // TODO: Error if exact read was requested and out_buf.len() smaller than bytes_requested
-
-        let response = UsbIpResponse {
-            header: UsbIpHeader {
-                command: UsbCmd::Response,
-                seqnum: header.seqnum,
-                devid: 2,
-                direction: Direction::IN,
-                ep: ep_addr as u32,
-            },
-            cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
-                status: 0,
-                actual_length: out_buf.len() as i32,
-                start_frame: 0,
-                number_of_packets: 0,
-                error_count: 0,
-            }),
-            data: out_buf,
-        };
-        log::debug!("{:?}", response);
-
-        self.handler
-            .connection
-            .as_mut()
-            .unwrap()
-            .write_all(&response.to_vec().unwrap())
-            .unwrap();
+    /// Returns to the initial state, ready for the next host
+    fn disconnect(&mut self) {
+        self.handler.connection = None;
+        self.reset = true;
     }
 
     /// Handles an incomming op packet, sends out the corresponding response
@@ -193,12 +173,7 @@ impl UsbIpBusInner {
                     }),
                 };
 
-                self.handler
-                    .connection
-                    .as_mut()
-                    .unwrap()
-                    .write_all(&list_response.to_vec().unwrap())
-                    .unwrap();
+                self.reply(&list_response.to_vec().unwrap());
             }
             OpRequest::ConnectDevice(header) => {
                 let list_response = OpResponse {
@@ -230,12 +205,7 @@ impl UsbIpBusInner {
                 log::info!("device is leaving reset state");
                 self.reset = false;
 
-                self.handler
-                    .connection
-                    .as_mut()
-                    .unwrap()
-                    .write_all(&list_response.to_vec().unwrap())
-                    .unwrap();
+                self.reply(&list_response.to_vec().unwrap());
             }
         }
     }
@@ -249,96 +219,56 @@ impl UsbIpBusInner {
         }
     }
 
-    /// Handle a [`UsbIpCmdSubmit`] package
+    /// Hands a submitted URB to its endpoint
     fn handle_cmd(&mut self, header: UsbIpHeader, cmd: UsbIpCmdSubmit, data: Vec<u8>) {
-        // Get the endpoint
-        let ep = match self.get_endpoint(header.ep as usize) {
-            Ok(ep) => ep,
-            Err(err) => {
-                log::warn!("reveiced message for unimplemented endpoint {:?}", err);
-                return;
-            }
+        let index = header.ep as usize;
+        let dir_in = header.direction == Direction::IN;
+        let urb = Urb {
+            seqnum: header.seqnum,
+            ep: header.ep,
+            dir_in,
+            setup: cmd.setup,
+            length: cmd.transfer_buffer_length.max(0) as usize,
+            data,
+            consumed: 0,
         };
+        let zero_packet = cmd.transfer_flags.contains(TransferFlags::ZERO_PACKET);
 
-        // check wether we have a setup packet
-        // NOTE: This assumes the control endpoints have no URBs pending
-        if cmd.setup != [0, 0, 0, 0, 0, 0, 0, 0] {
-            ep.get_out().unwrap().data.push_back(cmd.setup.to_vec());
-            ep.setup_flag = true;
-        }
-
-        match header.direction {
-            Direction::OUT => {
-                let ep_out = ep.get_out().unwrap();
-
-                // pass the data into the correct buffers
-                for chunk in data.chunks(ep_out.max_packet_size as usize) {
-                    ep_out.data.push_back(chunk.to_vec());
-                }
-
-                if cmd.transfer_flags.contains(TransferFlags::ZERO_PACKET)
-                    && ep_out.ty == EndpointType::Bulk
-                {
-                    ep_out.data.push_back(vec![]);
-                }
-
-                self.ack_cmd_out(header.ep, header.seqnum, data.len());
-            }
-            Direction::IN => {
-                let ep_addr = header.ep;
-                ep.pending_ins.push_back((header, cmd, data));
-                self.try_send_pending(ep_addr as usize);
-            }
-            _ => panic!(),
-        }
-    }
-
-    /// Send an acknowledgement after recieving a cmd out package.
-    fn ack_cmd_out(&mut self, ep: u32, seqnum: u32, len: usize) {
-        let response = UsbIpResponse {
-            header: UsbIpHeader {
-                command: UsbCmd::Response,
-                seqnum,
-                devid: 2,
-                direction: Direction::OUT,
-                ep,
-            },
-            cmd: UsbIpResponseCmd::Cmd(UsbIpRetSubmit {
-                status: 0,
-                actual_length: len as i32,
-                start_frame: 0,
-                number_of_packets: 0,
-                error_count: 0,
+        let completion = match (index, dir_in) {
+            // Control URBs are answered by the device, never on arrival
+            (0, _) => self.control().map(|control| {
+                control.submit(urb);
+                None
             }),
-            data: vec![],
+            (_, true) => self.pipe_in(index).map(|pipe| pipe.submit(urb)),
+            (_, false) => self
+                .pipe_out(index)
+                .map(|pipe| pipe.submit(urb, zero_packet)),
         };
-        log::debug!("{:?}", response);
-
-        self.handler
-            .connection
-            .as_mut()
-            .unwrap()
-            .write_all(&response.to_vec().unwrap())
-            .unwrap();
+        match completion {
+            Ok(completion) => self.send(completion),
+            Err(err) => log::warn!(
+                "received URB for unimplemented endpoint {}: {:?}",
+                index,
+                err
+            ),
+        }
     }
 
     /// Handle a received unlink package
     fn handle_unlink(&mut self, header: UsbIpHeader, unlink: UsbIpCmdUnlink) {
-        match self.unlink(unlink.seqnum) {
-            true => (),
-            false => {
-                log::warn!(
-                    "received request to remove urb {} that does not exists",
-                    unlink.seqnum
-                );
-            }
-        }
+        // A URB that was already answered is no error: the host simply raced the reply
+        let status = if self.unlink(unlink.seqnum) {
+            ECONNRESET
+        } else {
+            0
+        };
 
-        self.ack_unlink(header.ep, header.seqnum);
+        self.ack_unlink(header.ep, header.seqnum, status);
     }
 
     /// Send an acknowledgement after recieving an unlink package.
-    fn ack_unlink(&mut self, ep: u32, seqnum: u32) {
+    fn ack_unlink(&mut self, ep: u32, seqnum: u32, status: i32) {
         let response = UsbIpResponse {
             header: UsbIpHeader {
                 command: UsbCmd::UnlinkResponse,
@@ -347,16 +277,23 @@ impl UsbIpBusInner {
                 direction: Direction::OUT,
                 ep,
             },
-            cmd: UsbIpResponseCmd::Unlink(UsbIpRetUnlink { status: 0 }),
+            cmd: UsbIpResponseCmd::Unlink(UsbIpRetUnlink { status }),
             data: vec![],
         };
         log::debug!("{:?}", response);
 
-        self.handler
-            .connection
-            .as_mut()
-            .unwrap()
-            .write_all(&response.to_vec().unwrap())
-            .unwrap();
+        self.reply(&response.to_vec().unwrap());
     }
+}
+
+/// Whether a socket error means the host went away, rather than a bug
+fn is_disconnect(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::NotConnected
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+            | ErrorKind::UnexpectedEof
+    )
 }

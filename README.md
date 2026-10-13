@@ -62,8 +62,6 @@ Depending on you machine setup, you might need do `sudo`.
 
 This is a very alpha software, which still has a lot of quirks to be worked out.
 
-- When using HID, the connection always fails the first time and usually works the second time. It is not entirely clear, why.
-
 ## License
 
 [Apache-2.0][apache2-license] or [MIT][mit-license].

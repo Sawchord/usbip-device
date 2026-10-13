@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: test (usb-device ${{ matrix.usb-device }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The oldest usb-device the crate accepts orders endpoint 0 events differently
+        usb-device: [latest, 0.3.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+      - if: matrix.usb-device != 'latest'
+        run: |
+          cargo generate-lockfile
+          cargo update -p usb-device --precise ${{ matrix.usb-device }}
+      # Builds the examples too. The tests bind the USB/IP port 3240 on localhost.
+      - run: cargo test
